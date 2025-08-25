@@ -75,8 +75,25 @@ def generate_cycle(width: int, height: int, *, flips: int = 0, seed: int | None 
 
     if flips:
         rng = random.Random(seed)
-        for _ in range(flips):
+        performed_total = 0
+        for i in range(flips):
             _random_rotate(path, rng)
+            performed_total += 1
+            if verbose:
+                print(f"Flip {i + 1}: rotation applied")
+            if progress:
+                msg = f"Flipping: {i + 1}/{flips}"
+                if performed_total:
+                    msg += f" ({performed_total} succeeded)"
+                if verbose:
+                    print(msg)
+                else:
+                    print("\r" + msg, end="")
+        if progress and not verbose:
+            print()
+        if progress or verbose:
+            print(f"Flips performed: {performed_total}/{flips}")
+
 
     return Cycle(width=width, height=height, path=path)
 
