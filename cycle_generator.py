@@ -11,6 +11,7 @@ from __future__ import annotations
 import argparse
 import json
 import random
+import sys
 from dataclasses import dataclass
 from typing import Iterable, List, Tuple
 
@@ -46,23 +47,11 @@ def _random_rotate(path: List[Point], rng: random.Random) -> None:
         path.reverse()
 
 
-def generate_cycle(width: int, height: int, *, flips: int = 0, seed: int | None = None,
-                   progress: bool = True, verbose: bool = False) -> Cycle:
-
-    """Generate a Hamiltonian cycle for an even grid on a cylinder.
-
-    The base algorithm snakes vertically through each column and relies on the
-    horizontal wrap between the first and last columns to close the cycle.
-    Optional random "flips" are applied to produce a less regular cycle.
-
-    """
-    if width % 2 or height % 2:
-        raise ValueError("Both width and height must be even numbers")
-
+def _serpentine_cycle(width: int, height: int, *, progress: bool) -> List[Point]:
+    """Return the original deterministic serpentine cycle."""
     path: List[Point] = []
     total = width * height
     count = 0
-
     for x in range(width):
         ys: Iterable[int] = range(height) if x % 2 == 0 else reversed(range(height))
         for y in ys:
@@ -72,28 +61,87 @@ def generate_cycle(width: int, height: int, *, flips: int = 0, seed: int | None 
                 print(f"\rGenerating: {count}/{total}", end="")
     if progress:
         print()
+    return path
 
-    if flips:
-        rng = random.Random(seed)
-        performed_total = 0
-        for i in range(flips):
-            _random_rotate(path, rng)
-            performed_total += 1
-            if verbose:
-                print(f"Flip {i + 1}: rotation applied")
+
+def _neighbors(point: Point, width: int, height: int) -> List[Point]:
+    """Return the valid neighbours of a point on the cylindrical grid."""
+    x, y = point
+    opts = [((x + 1) % width, y), ((x - 1) % width, y)]
+    if y + 1 < height:
+        opts.append((x, y + 1))
+    if y - 1 >= 0:
+        opts.append((x, y - 1))
+    return opts
+
+
+def _random_cycle(width: int, height: int, rng: random.Random, *, progress: bool) -> List[Point]:
+    """Construct a Hamiltonian cycle using a randomized depth-first search.
+
+    A Warnsdorff-style heuristic (preferring moves that leave few options) keeps
+    the search tractable even for fairly large grids.  The RNG controls the
+    tie-breaking order, so runs with the same seed are reproducible.
+    """
+
+    sys.setrecursionlimit(max(sys.getrecursionlimit(), width * height + 10))
+    total = width * height
+    start: Point = (0, 0)
+    path: List[Point] = [start]
+    visited = {start}
+
+    if progress:
+        print(f"\rGenerating: 1/{total}", end="")
+
+    def dfs(p: Point) -> bool:
+        if len(path) == total:
+            return _is_neighbor(path[-1], start, width)
+
+        nbrs = [n for n in _neighbors(p, width, height) if n not in visited]
+        rng.shuffle(nbrs)
+        nbrs.sort(key=lambda n: sum(nn not in visited for nn in _neighbors(n, width, height)))
+        for n in nbrs:
+            path.append(n)
+            visited.add(n)
             if progress:
-                msg = f"Flipping: {i + 1}/{flips}"
-                if performed_total:
-                    msg += f" ({performed_total} succeeded)"
-                if verbose:
-                    print(msg)
-                else:
-                    print("\r" + msg, end="")
-        if progress and not verbose:
-            print()
-        if progress or verbose:
-            print(f"Flips performed: {performed_total}/{flips}")
+                print(f"\rGenerating: {len(path)}/{total}", end="")
+            if dfs(n):
+                return True
+            path.pop()
+            visited.remove(n)
+            if progress:
+                # show backtracking progress so the user knows the search
+                # is still active even when the path shrinks
+                print(f"\rGenerating: {len(path)}/{total}", end="")
+        return False
 
+    if not dfs(start):  # pragma: no cover - extremely unlikely for even grids
+        raise RuntimeError("Failed to generate Hamiltonian cycle")
+
+    if progress:
+        print()
+    return path
+
+
+def generate_cycle(width: int, height: int, *, flips: int = 0, seed: int | None = None,
+                   progress: bool = True, verbose: bool = False) -> Cycle:
+
+    """Generate a Hamiltonian cycle for an even grid on a cylinder.
+
+    With ``flips=0`` the original deterministic serpentine cycle is produced.
+    Any positive ``flips`` value triggers a randomized depth‑first search to
+    introduce randomness.  The ``seed`` parameter controls the RNG so runs are
+    reproducible.
+    """
+
+    if width % 2 or height % 2:
+        raise ValueError("Both width and height must be even numbers")
+
+    if flips <= 0:
+        path = _serpentine_cycle(width, height, progress=progress)
+    else:
+        rng = random.Random(seed)
+        path = _random_cycle(width, height, rng, progress=progress)
+        _random_rotate(path, rng)
 
     return Cycle(width=width, height=height, path=path)
 

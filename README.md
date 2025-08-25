@@ -17,11 +17,11 @@ On the software side we need:
 
 ```
 python cycle_generator.py <width> <height> --json output.json --image cycle.png \
-    --flips 100 --seed 42 --verbose
+    --flips 1 --seed 42
 ```
 
 Both `width` and `height` must be even numbers. The script prints progress as the path is generated,
-optionally applies random 2×2 "flips" to produce a less regular cycle and then saves the result to a
-JSON file. If `matplotlib` is available a PNG visualisation is written, with edges that cross the
-seam of the cylinder drawn separately on each side to show the wrap correctly. Use `--verbose` to
-log each attempted flip and see how many succeed.
+optionally performs a randomized search (enabled by ``--flips`` > 0) to produce a less regular
+cycle and then saves the result to a JSON file. If `matplotlib` is available a PNG visualisation is
+written, with edges that cross the seam of the cylinder drawn separately on each side to show the
+wrap correctly.
