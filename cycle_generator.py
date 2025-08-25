@@ -56,8 +56,10 @@ def _adj_to_path(adj: Dict[Point, List[Point]], start: Point) -> List[Point]:
 
 
 def _random_flips(adj: Dict[Point, List[Point]], width: int, height: int, flips: int, rng: random.Random,
-                  progress: bool = True) -> None:
+                  progress: bool = True, verbose: bool = False) -> None:
     """Perform random 2x2 square edge flips to randomise the cycle."""
+    performed_total = 0
+
     for i in range(flips):
         x = rng.randrange(width)
         y = rng.randrange(height - 1)
@@ -83,19 +85,36 @@ def _random_flips(adj: Dict[Point, List[Point]], width: int, height: int, flips:
                 adj[a].append(b); adj[b].append(a)
             if len(_adj_to_path(adj, v0)) == width * height:
                 performed = True
+                performed_total += 1
             else:  # revert split cycles
                 for a, b in edges_add:
                     adj[a].remove(b); adj[b].remove(a)
                 for a, b in edges_remove:
                     adj[a].append(b); adj[b].append(a)
+
+        if verbose:
+            status = "succeeded" if performed else "failed"
+            print(f"Flip {i + 1} at ({x},{y}) {status}")
+
         if progress:
-            print(f"\rFlipping: {i + 1}/{flips}", end="")
-    if progress and flips:
-        print()
+            msg = f"Flipping: {i + 1}/{flips}"
+            if performed_total:
+                msg += f" ({performed_total} succeeded)"
+            if verbose:
+                print(msg)
+            else:
+                print("\r" + msg, end="")
+
+    if flips:
+        if progress and not verbose:
+            print()
+        if progress or verbose:
+            print(f"Flips performed: {performed_total}/{flips}")
 
 
 def generate_cycle(width: int, height: int, *, flips: int = 0, seed: int | None = None,
-                   progress: bool = True) -> Cycle:
+                   progress: bool = True, verbose: bool = False) -> Cycle:
+
     """Generate a Hamiltonian cycle for an even grid on a cylinder.
 
     The base algorithm snakes vertically through each column and relies on the
@@ -123,7 +142,8 @@ def generate_cycle(width: int, height: int, *, flips: int = 0, seed: int | None 
     if flips:
         adj = _path_to_adj(path)
         rng = random.Random(seed)
-        _random_flips(adj, width, height, flips, rng, progress)
+        _random_flips(adj, width, height, flips, rng, progress, verbose)
+
         path = _adj_to_path(adj, path[0])
 
     return Cycle(width=width, height=height, path=path)
@@ -177,10 +197,11 @@ def main() -> None:
     parser.add_argument("--image", dest="image_file", default="cycle.png", help="output image file")
     parser.add_argument("--flips", type=int, default=0, help="random square flips to apply")
     parser.add_argument("--seed", type=int, default=None, help="random seed for flips")
+    parser.add_argument("--verbose", action="store_true", help="log each attempted flip")
     args = parser.parse_args()
 
-    cycle = generate_cycle(args.width, args.height, flips=args.flips, seed=args.seed)
-
+    cycle = generate_cycle(args.width, args.height, flips=args.flips, seed=args.seed,
+                           verbose=args.verbose)
     save_cycle_json(cycle, args.json_file)
     plot_cycle(cycle, args.image_file)
 
