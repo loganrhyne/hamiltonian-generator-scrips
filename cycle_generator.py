@@ -28,7 +28,6 @@ class Cycle:
     def to_dict(self) -> dict:
         return {"width": self.width, "height": self.height, "path": self.path}
 
-
 def _path_to_adj(path: List[Point]) -> Dict[Point, List[Point]]:
     """Convert a cyclic path into an adjacency mapping."""
     adj: Dict[Point, List[Point]] = {p: [] for p in path}
@@ -60,6 +59,7 @@ def _random_flips(adj: Dict[Point, List[Point]], width: int, height: int, flips:
                   progress: bool = True, verbose: bool = False) -> None:
     """Perform random 2x2 square edge flips to randomise the cycle."""
     performed_total = 0
+
     for i in range(flips):
         x = rng.randrange(width)
         y = rng.randrange(height - 1)
@@ -114,11 +114,13 @@ def _random_flips(adj: Dict[Point, List[Point]], width: int, height: int, flips:
 
 def generate_cycle(width: int, height: int, *, flips: int = 0, seed: int | None = None,
                    progress: bool = True, verbose: bool = False) -> Cycle:
+
     """Generate a Hamiltonian cycle for an even grid on a cylinder.
 
     The base algorithm snakes vertically through each column and relies on the
     horizontal wrap between the first and last columns to close the cycle.
     Optional random "flips" are applied to produce a less regular cycle.
+
     """
     if width % 2 or height % 2:
         raise ValueError("Both width and height must be even numbers")
@@ -141,6 +143,7 @@ def generate_cycle(width: int, height: int, *, flips: int = 0, seed: int | None 
         adj = _path_to_adj(path)
         rng = random.Random(seed)
         _random_flips(adj, width, height, flips, rng, progress, verbose)
+
         path = _adj_to_path(adj, path[0])
 
     return Cycle(width=width, height=height, path=path)
