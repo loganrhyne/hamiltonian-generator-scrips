@@ -12,7 +12,7 @@ import argparse
 import json
 import random
 from dataclasses import dataclass
-from typing import Dict, Iterable, List, Tuple
+from typing import Iterable, List, Tuple
 
 Point = Tuple[int, int]
 
@@ -28,73 +28,49 @@ class Cycle:
     def to_dict(self) -> dict:
         return {"width": self.width, "height": self.height, "path": self.path}
 
-def _path_to_adj(path: List[Point]) -> Dict[Point, List[Point]]:
-    """Convert a cyclic path into an adjacency mapping."""
-    adj: Dict[Point, List[Point]] = {p: [] for p in path}
-    for a, b in zip(path, path[1:]):
-        adj[a].append(b)
-        adj[b].append(a)
-    # close cycle
-    adj[path[0]].append(path[-1])
-    adj[path[-1]].append(path[0])
-    return adj
+
+def _is_neighbor(a: Point, b: Point, width: int) -> bool:
+    """Return True if two points are adjacent on the cylindrical grid."""
+    dx = abs(a[0] - b[0])
+    dx = min(dx, width - dx)  # wrap horizontally
+    dy = abs(a[1] - b[1])
+    return dx + dy == 1
 
 
-def _adj_to_path(adj: Dict[Point, List[Point]], start: Point) -> List[Point]:
-    """Reconstruct an ordered cycle path from an adjacency map."""
-    path = [start]
-    prev: Point | None = None
-    current = start
-    while True:
-        nbrs = adj[current]
-        nxt = nbrs[0] if nbrs[0] != prev else nbrs[1]
-        if nxt == start:
-            break
-        path.append(nxt)
-        prev, current = current, nxt
-    return path
 
-
-def _random_flips(adj: Dict[Point, List[Point]], width: int, height: int, flips: int, rng: random.Random,
+def _random_flips(path: List[Point], width: int, height: int, flips: int, rng: random.Random,
                   progress: bool = True, verbose: bool = False) -> None:
-    """Perform random 2x2 square edge flips to randomise the cycle."""
+    """Randomise a cycle using backbite moves."""
+    n = len(path)
     performed_total = 0
 
     for i in range(flips):
-        x = rng.randrange(width)
-        y = rng.randrange(height - 1)
-        x1 = (x + 1) % width
-        y1 = y + 1
-        v0, v1 = (x, y), (x1, y)
-        v2, v3 = (x, y1), (x1, y1)
-
-        performed = False
-        if v1 in adj[v0] and v3 in adj[v2] and v2 not in adj[v0] and v3 not in adj[v1]:
-            edges_remove = [(v0, v1), (v2, v3)]
-            edges_add = [(v0, v2), (v1, v3)]
-        elif v2 in adj[v0] and v3 in adj[v1] and v1 not in adj[v0] and v3 not in adj[v2]:
-            edges_remove = [(v0, v2), (v1, v3)]
-            edges_add = [(v0, v1), (v2, v3)]
+        head = rng.choice([True, False])
+        end_idx = 0 if head else n - 1
+        adj_idx = 1 if head else n - 2
+        x, y = path[end_idx]
+        adj_pt = path[adj_idx]
+        neighbours: List[Point] = []
+        for dx, dy in [(1, 0), (-1, 0), (0, 1), (0, -1)]:
+            nx = (x + dx) % width
+            ny = y + dy
+            if 0 <= ny < height and (nx, ny) != adj_pt:
+                neighbours.append((nx, ny))
+        rng.shuffle(neighbours)
+        target = neighbours[0]
+        idx = path.index(target)
+        if head:
+            segment = path[: idx + 1]
+            segment.reverse()
+            path[: idx + 1] = segment
         else:
-            edges_remove = edges_add = []
-
-        if edges_remove:
-            for a, b in edges_remove:
-                adj[a].remove(b); adj[b].remove(a)
-            for a, b in edges_add:
-                adj[a].append(b); adj[b].append(a)
-            if len(_adj_to_path(adj, v0)) == width * height:
-                performed = True
-                performed_total += 1
-            else:  # revert split cycles
-                for a, b in edges_add:
-                    adj[a].remove(b); adj[b].remove(a)
-                for a, b in edges_remove:
-                    adj[a].append(b); adj[b].append(a)
+            segment = path[idx:]
+            segment.reverse()
+            path[idx:] = segment
+        performed_total += 1
 
         if verbose:
-            status = "succeeded" if performed else "failed"
-            print(f"Flip {i + 1} at ({x},{y}) {status}")
+            print(f"Flip {i + 1} at {'head' if head else 'tail'}")
 
         if progress:
             msg = f"Flipping: {i + 1}/{flips}"
@@ -104,6 +80,31 @@ def _random_flips(adj: Dict[Point, List[Point]], width: int, height: int, flips:
                 print(msg)
             else:
                 print("\r" + msg, end="")
+
+    # ensure endpoints are adjacent to close the cycle
+    while not _is_neighbor(path[0], path[-1], width):
+        head = rng.choice([True, False])
+        end_idx = 0 if head else n - 1
+        adj_idx = 1 if head else n - 2
+        x, y = path[end_idx]
+        adj_pt = path[adj_idx]
+        neighbours = []
+        for dx, dy in [(1, 0), (-1, 0), (0, 1), (0, -1)]:
+            nx = (x + dx) % width
+            ny = y + dy
+            if 0 <= ny < height and (nx, ny) != adj_pt:
+                neighbours.append((nx, ny))
+        rng.shuffle(neighbours)
+        target = neighbours[0]
+        idx = path.index(target)
+        if head:
+            segment = path[: idx + 1]
+            segment.reverse()
+            path[: idx + 1] = segment
+        else:
+            segment = path[idx:]
+            segment.reverse()
+            path[idx:] = segment
 
     if flips:
         if progress and not verbose:
@@ -140,11 +141,8 @@ def generate_cycle(width: int, height: int, *, flips: int = 0, seed: int | None 
         print()
 
     if flips:
-        adj = _path_to_adj(path)
         rng = random.Random(seed)
-        _random_flips(adj, width, height, flips, rng, progress, verbose)
-
-        path = _adj_to_path(adj, path[0])
+        _random_flips(path, width, height, flips, rng, progress, verbose)
 
     return Cycle(width=width, height=height, path=path)
 
