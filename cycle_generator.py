@@ -10,8 +10,9 @@ from __future__ import annotations
 
 import argparse
 import json
+import random
 from dataclasses import dataclass
-from typing import Callable, Iterable, List, Tuple
+from typing import Dict, Iterable, List, Tuple
 
 Point = Tuple[int, int]
 
@@ -27,12 +28,80 @@ class Cycle:
     def to_dict(self) -> dict:
         return {"width": self.width, "height": self.height, "path": self.path}
 
+def _path_to_adj(path: List[Point]) -> Dict[Point, List[Point]]:
+    """Convert a cyclic path into an adjacency mapping."""
+    adj: Dict[Point, List[Point]] = {p: [] for p in path}
+    for a, b in zip(path, path[1:]):
+        adj[a].append(b)
+        adj[b].append(a)
+    # close cycle
+    adj[path[0]].append(path[-1])
+    adj[path[-1]].append(path[0])
+    return adj
 
-def generate_cycle(width: int, height: int, progress: bool = True) -> Cycle:
+
+def _adj_to_path(adj: Dict[Point, List[Point]], start: Point) -> List[Point]:
+    """Reconstruct an ordered cycle path from an adjacency map."""
+    path = [start]
+    prev: Point | None = None
+    current = start
+    while True:
+        nbrs = adj[current]
+        nxt = nbrs[0] if nbrs[0] != prev else nbrs[1]
+        if nxt == start:
+            break
+        path.append(nxt)
+        prev, current = current, nxt
+    return path
+
+
+def _random_flips(adj: Dict[Point, List[Point]], width: int, height: int, flips: int, rng: random.Random,
+                  progress: bool = True) -> None:
+    """Perform random 2x2 square edge flips to randomise the cycle."""
+    for i in range(flips):
+        x = rng.randrange(width)
+        y = rng.randrange(height - 1)
+        x1 = (x + 1) % width
+        y1 = y + 1
+        v0, v1 = (x, y), (x1, y)
+        v2, v3 = (x, y1), (x1, y1)
+
+        performed = False
+        if v1 in adj[v0] and v3 in adj[v2] and v2 not in adj[v0] and v3 not in adj[v1]:
+            edges_remove = [(v0, v1), (v2, v3)]
+            edges_add = [(v0, v2), (v1, v3)]
+        elif v2 in adj[v0] and v3 in adj[v1] and v1 not in adj[v0] and v3 not in adj[v2]:
+            edges_remove = [(v0, v2), (v1, v3)]
+            edges_add = [(v0, v1), (v2, v3)]
+        else:
+            edges_remove = edges_add = []
+
+        if edges_remove:
+            for a, b in edges_remove:
+                adj[a].remove(b); adj[b].remove(a)
+            for a, b in edges_add:
+                adj[a].append(b); adj[b].append(a)
+            if len(_adj_to_path(adj, v0)) == width * height:
+                performed = True
+            else:  # revert split cycles
+                for a, b in edges_add:
+                    adj[a].remove(b); adj[b].remove(a)
+                for a, b in edges_remove:
+                    adj[a].append(b); adj[b].append(a)
+        if progress:
+            print(f"\rFlipping: {i + 1}/{flips}", end="")
+    if progress and flips:
+        print()
+
+
+def generate_cycle(width: int, height: int, *, flips: int = 0, seed: int | None = None,
+                   progress: bool = True) -> Cycle:
     """Generate a Hamiltonian cycle for an even grid on a cylinder.
 
-    The algorithm snakes vertically through each column and relies on the
+    The base algorithm snakes vertically through each column and relies on the
     horizontal wrap between the first and last columns to close the cycle.
+    Optional random "flips" are applied to produce a less regular cycle.
+
     """
     if width % 2 or height % 2:
         raise ValueError("Both width and height must be even numbers")
@@ -50,6 +119,13 @@ def generate_cycle(width: int, height: int, progress: bool = True) -> Cycle:
                 print(f"\rGenerating: {count}/{total}", end="")
     if progress:
         print()
+
+    if flips:
+        adj = _path_to_adj(path)
+        rng = random.Random(seed)
+        _random_flips(adj, width, height, flips, rng, progress)
+        path = _adj_to_path(adj, path[0])
+
     return Cycle(width=width, height=height, path=path)
 
 
@@ -66,12 +142,23 @@ def plot_cycle(cycle: Cycle, filename: str) -> None:
         print(f"Could not import matplotlib ({exc}); skipping plot")
         return
 
-    xs = [x for x, _ in cycle.path] + [cycle.path[0][0]]
-    ys = [y for _, y in cycle.path] + [cycle.path[0][1]]
-
     plt.figure(figsize=(cycle.width / 2, cycle.height / 2))
-    plt.plot(xs, ys, "-o", markersize=3)
-    plt.xlim(-0.5, cycle.width - 0.5)
+    edge_left = -0.5
+    edge_right = cycle.width - 0.5
+    for (x1, y1), (x2, y2) in zip(cycle.path, cycle.path[1:] + [cycle.path[0]]):
+        dx = x2 - x1
+        if dx == cycle.width - 1:  # wrap west across seam
+            plt.plot([x1, edge_left], [y1, y1], color="C0")
+            plt.plot([edge_right, x2], [y2, y2], color="C0")
+        elif dx == -(cycle.width - 1):  # wrap east across seam
+            plt.plot([x1, edge_right], [y1, y1], color="C0")
+            plt.plot([edge_left, x2], [y2, y2], color="C0")
+        else:
+            plt.plot([x1, x2], [y1, y2], color="C0")
+    xs = [x for x, _ in cycle.path]
+    ys = [y for _, y in cycle.path]
+    plt.scatter(xs, ys, s=9, color="C0")
+    plt.xlim(edge_left, edge_right)
     plt.ylim(-0.5, cycle.height - 0.5)
     plt.gca().invert_yaxis()
     plt.gca().set_aspect("equal", adjustable="box")
@@ -88,9 +175,12 @@ def main() -> None:
     parser.add_argument("height", type=int, help="grid height (even)")
     parser.add_argument("--json", dest="json_file", default="cycle.json", help="output JSON file")
     parser.add_argument("--image", dest="image_file", default="cycle.png", help="output image file")
+    parser.add_argument("--flips", type=int, default=0, help="random square flips to apply")
+    parser.add_argument("--seed", type=int, default=None, help="random seed for flips")
     args = parser.parse_args()
 
-    cycle = generate_cycle(args.width, args.height)
+    cycle = generate_cycle(args.width, args.height, flips=args.flips, seed=args.seed)
+
     save_cycle_json(cycle, args.json_file)
     plot_cycle(cycle, args.image_file)
 
