@@ -12,3 +12,14 @@ On the software side we need:
 - A simple way to visualize generated paths to check for correctness
 - A way to specify "physical" traits like wall thickess and height to visualize the final object as it would exist after construction
 
+
+## Usage
+
+```
+python cycle_generator.py <width> <height> --json output.json --image cycle.png --flips 100 --seed 42
+```
+
+Both `width` and `height` must be even numbers. The script prints progress as the path is generated,
+optionally applies random 2×2 "flips" to produce a less regular cycle and then saves the result to a
+JSON file. If `matplotlib` is available a PNG visualisation is written, with edges that cross the
+seam of the cylinder drawn separately on each side to show the wrap correctly.
