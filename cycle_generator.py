@@ -94,6 +94,7 @@ def generate_cycle(width: int, height: int, *, flips: int = 0, seed: int | None 
         if progress or verbose:
             print(f"Flips performed: {performed_total}/{flips}")
 
+
     return Cycle(width=width, height=height, path=path)
 
 
