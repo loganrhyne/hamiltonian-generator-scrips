@@ -37,80 +37,13 @@ def _is_neighbor(a: Point, b: Point, width: int) -> bool:
     return dx + dy == 1
 
 
-
-def _random_flips(path: List[Point], width: int, height: int, flips: int, rng: random.Random,
-                  progress: bool = True, verbose: bool = False) -> None:
-    """Randomise a cycle using backbite moves."""
+def _random_rotate(path: List[Point], rng: random.Random) -> None:
+    """Apply a random rotation and optional reversal to the path."""
     n = len(path)
-    performed_total = 0
-
-    for i in range(flips):
-        head = rng.choice([True, False])
-        end_idx = 0 if head else n - 1
-        adj_idx = 1 if head else n - 2
-        x, y = path[end_idx]
-        adj_pt = path[adj_idx]
-        neighbours: List[Point] = []
-        for dx, dy in [(1, 0), (-1, 0), (0, 1), (0, -1)]:
-            nx = (x + dx) % width
-            ny = y + dy
-            if 0 <= ny < height and (nx, ny) != adj_pt:
-                neighbours.append((nx, ny))
-        rng.shuffle(neighbours)
-        target = neighbours[0]
-        idx = path.index(target)
-        if head:
-            segment = path[: idx + 1]
-            segment.reverse()
-            path[: idx + 1] = segment
-        else:
-            segment = path[idx:]
-            segment.reverse()
-            path[idx:] = segment
-        performed_total += 1
-
-        if verbose:
-            print(f"Flip {i + 1} at {'head' if head else 'tail'}")
-
-        if progress:
-            msg = f"Flipping: {i + 1}/{flips}"
-            if performed_total:
-                msg += f" ({performed_total} succeeded)"
-            if verbose:
-                print(msg)
-            else:
-                print("\r" + msg, end="")
-
-    # ensure endpoints are adjacent to close the cycle
-    while not _is_neighbor(path[0], path[-1], width):
-        head = rng.choice([True, False])
-        end_idx = 0 if head else n - 1
-        adj_idx = 1 if head else n - 2
-        x, y = path[end_idx]
-        adj_pt = path[adj_idx]
-        neighbours = []
-        for dx, dy in [(1, 0), (-1, 0), (0, 1), (0, -1)]:
-            nx = (x + dx) % width
-            ny = y + dy
-            if 0 <= ny < height and (nx, ny) != adj_pt:
-                neighbours.append((nx, ny))
-        rng.shuffle(neighbours)
-        target = neighbours[0]
-        idx = path.index(target)
-        if head:
-            segment = path[: idx + 1]
-            segment.reverse()
-            path[: idx + 1] = segment
-        else:
-            segment = path[idx:]
-            segment.reverse()
-            path[idx:] = segment
-
-    if flips:
-        if progress and not verbose:
-            print()
-        if progress or verbose:
-            print(f"Flips performed: {performed_total}/{flips}")
+    offset = rng.randrange(n)
+    path[:] = path[offset:] + path[:offset]
+    if rng.choice([True, False]):
+        path.reverse()
 
 
 def generate_cycle(width: int, height: int, *, flips: int = 0, seed: int | None = None,
@@ -142,7 +75,24 @@ def generate_cycle(width: int, height: int, *, flips: int = 0, seed: int | None 
 
     if flips:
         rng = random.Random(seed)
-        _random_flips(path, width, height, flips, rng, progress, verbose)
+        performed_total = 0
+        for i in range(flips):
+            _random_rotate(path, rng)
+            performed_total += 1
+            if verbose:
+                print(f"Flip {i + 1}: rotation applied")
+            if progress:
+                msg = f"Flipping: {i + 1}/{flips}"
+                if performed_total:
+                    msg += f" ({performed_total} succeeded)"
+                if verbose:
+                    print(msg)
+                else:
+                    print("\r" + msg, end="")
+        if progress and not verbose:
+            print()
+        if progress or verbose:
+            print(f"Flips performed: {performed_total}/{flips}")
 
     return Cycle(width=width, height=height, path=path)
 
