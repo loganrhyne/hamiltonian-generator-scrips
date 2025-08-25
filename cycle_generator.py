@@ -28,7 +28,6 @@ class Cycle:
     def to_dict(self) -> dict:
         return {"width": self.width, "height": self.height, "path": self.path}
 
-
 def _path_to_adj(path: List[Point]) -> Dict[Point, List[Point]]:
     """Convert a cyclic path into an adjacency mapping."""
     adj: Dict[Point, List[Point]] = {p: [] for p in path}
@@ -102,6 +101,7 @@ def generate_cycle(width: int, height: int, *, flips: int = 0, seed: int | None 
     The base algorithm snakes vertically through each column and relies on the
     horizontal wrap between the first and last columns to close the cycle.
     Optional random "flips" are applied to produce a less regular cycle.
+
     """
     if width % 2 or height % 2:
         raise ValueError("Both width and height must be even numbers")
@@ -180,6 +180,7 @@ def main() -> None:
     args = parser.parse_args()
 
     cycle = generate_cycle(args.width, args.height, flips=args.flips, seed=args.seed)
+
     save_cycle_json(cycle, args.json_file)
     plot_cycle(cycle, args.image_file)
 
