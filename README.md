@@ -12,3 +12,12 @@ On the software side we need:
 - A simple way to visualize generated paths to check for correctness
 - A way to specify "physical" traits like wall thickess and height to visualize the final object as it would exist after construction
 
+
+## Usage
+
+```
+python cycle_generator.py <width> <height> --json output.json --image cycle.png
+```
+
+Both `width` and `height` must be even numbers. The script prints progress as the path is generated,
+saves the cycle to a JSON file and, if `matplotlib` is available, writes a PNG visualisation.
