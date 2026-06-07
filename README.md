@@ -52,3 +52,26 @@ Warnsdorff DFS. Note the DFS struggles to *close* a cycle on tall, skinny cylind
 
 Both generators require `width` and `height` to be even. PNG output needs `matplotlib`;
 edges that cross the cylinder seam are drawn separately on each side to show the wrap.
+
+## Printable templates
+
+`path_to_template.py` turns a cycle into physical, printable wall templates for a
+cylindrical lampshade. Columns map to the cylinder **circumference** (π·diameter)
+and rows to its **height**, so you give real dimensions in mm:
+
+```
+# from a saved cycle:
+python path_to_template.py --json cycle.json --diameter 120 --height 300 --wall 3 --out lamp
+# or generate one in the same step:
+python path_to_template.py --size 8 40 --seed 7 --diameter 120 --height 300 --out lamp
+```
+
+It writes:
+
+- `lamp_full.svg` — the whole unrolled wall layout at true mm scale (large-format / laser);
+- `lamp_page_R#C#.svg` — A4 tiles with crop marks, page labels and the marked glue seam;
+- `lamp_preview.png` — a proof of the walls with the page grid overlaid.
+
+The cycle's seam edges are emitted as half-cell stubs on both the left and right
+ends (marked blue), so the path stays continuous when the sheet is rolled and the
+two blue edges are glued together. Run its tests with `python tests/test_template.py`.
