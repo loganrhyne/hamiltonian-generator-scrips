@@ -47,13 +47,26 @@ def load_cycle(path: str) -> Cycle:
                  path=[tuple(p) for p in d["path"]])
 
 
-def build_sheet(cycle: Cycle, *, diameter_mm: float, height_mm: float,
-                wall_mm: float, wrap: bool = True) -> Sheet:
-    """Scale a cycle to a real cylinder. Columns -> circumference, rows -> height."""
+def build_sheet(cycle: Cycle, *, wall_mm: float,
+                diameter_mm: float | None = None, height_mm: float | None = None,
+                cell_w_mm: float | None = None, cell_h_mm: float | None = None,
+                wrap: bool = True) -> Sheet:
+    """Scale a cycle to a real cylinder. Columns -> circumference, rows -> height.
+
+    Provide either explicit cell sizes (``cell_w_mm`` + ``cell_h_mm``) or the
+    cylinder dimensions (``diameter_mm`` + ``height_mm``), from which the cell
+    sizes are derived.
+    """
     W, H = cycle.width, cycle.height
-    circumference = math.pi * diameter_mm
-    cell_w = circumference / W
-    cell_h = height_mm / H
+    if cell_w_mm is not None or cell_h_mm is not None:
+        if cell_w_mm is None or cell_h_mm is None:
+            raise ValueError("give both cell_w_mm and cell_h_mm")
+        cell_w, cell_h = cell_w_mm, cell_h_mm
+    else:
+        if diameter_mm is None or height_mm is None:
+            raise ValueError("give diameter_mm + height_mm, or cell_w_mm + cell_h_mm")
+        cell_w = (math.pi * diameter_mm) / W
+        cell_h = height_mm / H
     # _cycle_segments works in cell space with x=col, y=row, seam stubs at
     # x=-0.5 and x=W-0.5; shift right by half a cell so content starts at 0.
     segs: List[Tuple[float, float, float, float]] = []
@@ -62,7 +75,7 @@ def build_sheet(cycle: Cycle, *, diameter_mm: float, height_mm: float,
             (x1 + 0.5) * cell_w, (y1 + 0.5) * cell_h,
             (x2 + 0.5) * cell_w, (y2 + 0.5) * cell_h,
         ))
-    return Sheet(width_mm=W * cell_w, height_mm=height_mm,
+    return Sheet(width_mm=W * cell_w, height_mm=H * cell_h,
                  cell_w=cell_w, cell_h=cell_h, wall_mm=wall_mm, segments=segs)
 
 
@@ -199,7 +212,9 @@ def main(argv=None) -> None:
     ap.add_argument("--tree", choices=["prim", "backtracker"], default="prim")
     ap.add_argument("--diameter", type=float, default=120.0, help="cylinder diameter (mm)")
     ap.add_argument("--height", type=float, default=300.0, help="cylinder height (mm)")
-    ap.add_argument("--wall", type=float, default=3.0, help="wall thickness (mm)")
+    ap.add_argument("--cell", nargs=2, type=float, metavar=("CW", "CH"),
+                    help="explicit cell width,height in mm (overrides --diameter/--height)")
+    ap.add_argument("--wall", type=float, default=3.0, help="wall thickness / extrusion (mm)")
     ap.add_argument("--margin", type=float, default=8.0, help="A4 print margin (mm)")
     ap.add_argument("--out", default="template", help="output basename")
     ap.add_argument("--no-pages", action="store_true", help="skip A4 tiling")
@@ -213,11 +228,18 @@ def main(argv=None) -> None:
     if not ok:
         raise SystemExit(f"input cycle invalid: {msg}")
 
-    sheet = build_sheet(cycle, diameter_mm=args.diameter,
-                        height_mm=args.height, wall_mm=args.wall)
+    if args.cell:
+        sheet = build_sheet(cycle, wall_mm=args.wall,
+                            cell_w_mm=args.cell[0], cell_h_mm=args.cell[1])
+    else:
+        sheet = build_sheet(cycle, wall_mm=args.wall,
+                            diameter_mm=args.diameter, height_mm=args.height)
+    diameter = sheet.width_mm / math.pi
     print(f"cycle {cycle.width}x{cycle.height} -> sheet "
           f"{sheet.width_mm:.1f}×{sheet.height_mm:.1f} mm  "
           f"(cell {sheet.cell_w:.1f}×{sheet.cell_h:.1f} mm, wall {sheet.wall_mm} mm)")
+    print(f"  => cylinder Ø{diameter:.1f} mm × {sheet.height_mm:.0f} mm tall "
+          f"(circumference {sheet.width_mm:.1f} mm)")
 
     write_full_svg(sheet, f"{args.out}_full.svg")
     print(f"full SVG -> {args.out}_full.svg")

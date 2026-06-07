@@ -24,6 +24,23 @@ def test_sheet_scaling():
     assert math.isclose(sheet.height_mm, height, rel_tol=1e-9)
 
 
+def test_explicit_cell_dims():
+    """--cell mode: cell sizes are used verbatim and imply the cylinder size."""
+    cyc = generate_cycle(8, 18, seed=7)
+    sheet = build_sheet(cyc, cell_w_mm=60.0, cell_h_mm=60.0, wall_mm=20.0)
+    assert sheet.cell_w == 60.0 and sheet.cell_h == 60.0
+    assert math.isclose(sheet.width_mm, 8 * 60.0)      # circumference 480 mm
+    assert math.isclose(sheet.height_mm, 18 * 60.0)    # 1080 mm tall
+    assert math.isclose(sheet.width_mm / math.pi, 152.79, abs_tol=0.1)  # ~Ø153 mm
+    # partial cell spec is rejected
+    for kw in ({"cell_w_mm": 60.0}, {"cell_h_mm": 60.0}):
+        try:
+            build_sheet(cyc, wall_mm=20.0, **kw)
+        except ValueError:
+            continue
+        raise AssertionError("partial cell spec should raise")
+
+
 def test_segments_within_bounds():
     cyc = generate_cycle(20, 20, seed=1)
     sheet = build_sheet(cyc, diameter_mm=100, height_mm=200, wall_mm=2.0)

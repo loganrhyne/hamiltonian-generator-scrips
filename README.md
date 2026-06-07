@@ -60,11 +60,18 @@ cylindrical lampshade. Columns map to the cylinder **circumference** (π·diamet
 and rows to its **height**, so you give real dimensions in mm:
 
 ```
-# from a saved cycle:
+# from a saved cycle, sized by cylinder dimensions:
 python path_to_template.py --json cycle.json --diameter 120 --height 300 --wall 3 --out lamp
 # or generate one in the same step:
 python path_to_template.py --size 8 40 --seed 7 --diameter 120 --height 300 --out lamp
+# or fix the grid cell size explicitly (the cylinder diameter is then derived):
+python path_to_template.py --size 8 18 --seed 7 --cell 60 60 --wall 20 --out floorlamp
+#   -> 60mm square cells: Ø152.8 mm x 1080 mm tall floor column, 12 A4 pages
 ```
+
+Sizing is either `--diameter` + `--height` (cells derived) or `--cell CW CH`
+(explicit mm grid; `--cell` overrides the cylinder dimensions and the implied
+diameter is reported). `--wall` is the wall thickness / extrusion in mm.
 
 It writes:
 
