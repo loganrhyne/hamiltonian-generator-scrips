@@ -1,8 +1,8 @@
 // UI wiring for the Hamiltonian Lamp Designer.
 
 import { generateCycle, verifyCycle } from './cycle.js';
-import { buildSheet, buildStrips, buildTiles, computeStats } from './geometry.js';
-import { makeStripsPDF, makeTilesPDF } from './pdf.js';
+import { buildSheet, buildPieces, buildTiles, computeStats } from './geometry.js';
+import { makePiecesPDF, makeTilesPDF } from './pdf.js';
 import { LampViewer } from './viewer.js';
 
 const $ = (id) => document.getElementById(id);
@@ -16,7 +16,7 @@ const els = {
 };
 
 const viewer = new LampViewer($('view'));
-const state = { cycle: null, params: null, stats: null, strips: null, tiles: null, sheet: null };
+const state = { cycle: null, params: null, stats: null, pieces: null, tiles: null, sheet: null };
 
 function readParams() {
   const even = (el) => {
@@ -47,21 +47,30 @@ function fmt(n, d = 1) {
 }
 
 function renderSpecs() {
-  const { stats, strips, tiles } = state;
+  const { stats, pieces, tiles } = state;
   const rows = [
     ['cylinder Ø', `${fmt(stats.diameter)} mm`],
     ['height', `${fmt(stats.heightMM, 0)} mm`],
     ['circumference', `${fmt(stats.circumference)} mm`],
     ['cells', fmt(stats.cells, 0)],
-    ['wall ribbon', `${fmt(strips.totalLength / 1000, 2)} m`],
-    ['folds', fmt(strips.foldCount, 0)],
-    ['strip pieces', `${strips.strips.length} on ${strips.pages.length} pages`, strips.pages.length > 30],
-    ['template tiles', `${tiles.pages.length} pages (${tiles.ncol}×${tiles.nrow})`, tiles.pages.length > 30],
   ];
+  if (pieces) {
+    rows.push(
+      ['wall ribbon', `${fmt(pieces.totalOuterLength / 1000, 2)} m`],
+      ['folds', fmt(pieces.foldsPrinted, 0)],
+      ['wall pieces', `${pieces.pieces.length} on ${pieces.pageCount} pages`, pieces.pageCount > 30],
+    );
+  } else {
+    rows.push(['wall pieces', 'wall too tall for radius', true]);
+  }
+  rows.push(['template tiles', `${tiles.pages.length} pages (${tiles.ncol}×${tiles.nrow})`, tiles.pages.length > 30]);
   els.specs.innerHTML = rows
     .map(([k, v, warn]) => `<dt>${k}</dt><dd${warn ? ' class="warn"' : ''}>${v}</dd>`)
     .join('');
-  els.dlStripsSub.textContent = `— ${strips.strips.length} pieces · ${strips.pages.length + 1} pages A4`;
+  els.dlStrips.disabled = !pieces;
+  els.dlStripsSub.textContent = pieces
+    ? `— ${pieces.pieces.length} pieces · ${pieces.pageCount + 1} pages A4`
+    : `— wall height must be < radius (${fmt(stats.radius)} mm)`;
   els.dlTilesSub.textContent = `— ${tiles.pages.length + 1} pages A4 · tape ${tiles.ncol}×${tiles.nrow}`;
 }
 
@@ -78,7 +87,11 @@ function rebuild() {
 
   state.stats = { ...computeStats(p), seed: p.seed, tree: p.tree };
   state.sheet = buildSheet(state.cycle, { cellW: p.cellW, cellH: p.cellH });
-  state.strips = buildStrips(state.cycle, { cellW: p.cellW, cellH: p.cellH, wallHeight: p.wallHeight });
+  try {
+    state.pieces = buildPieces(state.cycle, { cellW: p.cellW, cellH: p.cellH, wallHeight: p.wallHeight });
+  } catch (err) {
+    state.pieces = null; // wall height >= cylinder radius
+  }
   state.tiles = buildTiles(state.sheet);
 
   const tMesh = viewer.update(state.cycle, p);
@@ -122,7 +135,7 @@ async function download(button, make, suffix) {
 }
 
 els.dlStrips.addEventListener('click', () =>
-  download(els.dlStrips, () => makeStripsPDF(state.strips, state.stats), 'strips'));
+  download(els.dlStrips, () => makePiecesPDF(state.pieces, state.stats), 'pieces'));
 els.dlTiles.addEventListener('click', () =>
   download(els.dlTiles, () => makeTilesPDF(state.tiles, state.sheet, state.stats), 'path'));
 

@@ -27,11 +27,17 @@ cd app && python3 -m http.server 8000
 
 ## Outputs (print at 100% scale, never "fit to page")
 
-1. **Wall strips** (landscape A4) — the wall ribbon cut into numbered strips
-   with a hatched glue tab at each end. Dashed verticals are 90° fold lines:
-   blue tick above = path turns left, red tick below = path turns right (as
-   drawn on the unrolled template, walking left → right). The last strip's tab
-   closes the loop back onto strip 001.
+1. **Wall pieces** (landscape A4) — the wall ribbon unfolded flat and cut into
+   numbered pieces with hatched glue tabs. Because the wall extrudes radially
+   inward, vertical path runs flatten to straight rectangles but horizontal
+   runs flatten to *ring arcs* (outer radius = cylinder radius, inner radius =
+   radius − wall height; one cell spans 2π/cols). Pieces chain through 90°
+   fold lines at every horizontal↔vertical junction (blue tick past the shade
+   edge = left turn, red tick past the free edge = right turn) and are cut
+   wherever the flattened chain would overrun the printable area or curl too
+   far (the piece is rotated to its chord and kept slim so pages pack
+   densely). A dashed colored tab line means that joint is also a 90° corner.
+   The last piece's tab closes the loop back onto piece 001.
 2. **Path template** (portrait A4) — the unrolled cylinder tiled across pages
    with crop marks and `R#C#` labels; tape them together, transfer the path to
    the shade paper, roll, and glue at the blue dashed seam. Seam-crossing path
@@ -56,8 +62,9 @@ node app/tests/run-tests.mjs
 
 Covers cycle validity across sizes up to 100×100 (both samplers, wrap and
 flat, plus seed determinism and the contractibility/turning-number invariant),
-strip packing (length conservation, fold preservation, page fit, fold/cut
-clearance), tiling coverage, mesh sanity, and performance budgets. At
+wall-piece construction (outer-edge length conservation, arc-angle accounting,
+fold/joint bookkeeping, element-chain continuity, page fit, packing without
+overlaps), tiling coverage, mesh sanity, and performance budgets. At
 100×100, generation runs ~1 ms and the full layout pipeline <50 ms in Node;
 in-browser rebuild including the 3D mesh is well under a second, and the
 100×100 PDFs render in <1 s each.

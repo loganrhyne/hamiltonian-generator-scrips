@@ -35,7 +35,6 @@ export function buildSheet(cycle, { cellW, cellH, wrap = true } = {}) {
 /** Headline numbers for a configuration. */
 export function computeStats({ cols, rows, cellW, cellH, wallHeight }) {
   const circumference = cols * cellW;
-  const nH = cols * rows; // horizontal steps (one per cell, h+v split below)
   return {
     cols,
     rows,
@@ -45,111 +44,299 @@ export function computeStats({ cols, rows, cellW, cellH, wallHeight }) {
     wallHeight,
     circumference,
     diameter: circumference / Math.PI,
+    radius: circumference / (2 * Math.PI),
     heightMM: rows * cellH,
-    // exact ribbon length needs the cycle's h/v split; see buildStrips
-    maxRibbonLength: nH * Math.max(cellW, cellH),
   };
 }
 
-// ─────────────────── wall ribbon -> A4 strips ───────────────────
+// ─────────────────── wall ribbon -> printable pieces ───────────────────
+// The wall stands on the shade surface and extrudes radially inward, so its
+// developable (flattened) shape is NOT a straight strip:
+//   * a vertical path run lies in an axial plane  -> flat rectangle;
+//   * a horizontal path run lies in a horizontal plane -> annular sector with
+//     outer radius R (the cylinder radius, where it meets the shade) and
+//     inner radius R - wallHeight; each horizontal cell spans 2π/W radians.
+// Chained pieces stay connected through 90° folds at every h↔v junction (the
+// fold line is radial, so travel continues straight across it when flat) and
+// every arc bends toward the free edge, so chains curl predictably. A piece
+// is cut whenever adding the next cell would overflow the printable A4 area
+// or accumulate ≥ maxTurn of arc curvature (self-overlap guard).
+//
+// Piece-local coordinates: the outer (shade) edge starts at (0,0) heading +x,
+// and the band extends `wallHeight` to the left of travel (+y on the page).
 /**
- * Turn the cycle into a continuous wall ribbon and pack it into printable
- * strips. The ribbon is `wallHeight` tall and runs the whole cycle; each 90°
- * turn in the path becomes a vertical fold line. Strips are cut from A4
- * landscape rows and joined end-to-end with overlap glue tabs; cuts are
- * placed mid-segment (as far from the neighbouring folds as possible).
- *
- * Returns:
- *   strips: [{index, length, folds: [{pos, turn}]}]   pos in mm from strip start
- *   totalLength: ribbon length in mm (excluding tabs)
- *   pages: [{strips: [stripIndex...]}] layout rows on landscape A4
+ * Returns {pieces, placements, pageCount, totalOuterLength, foldsPrinted,
+ * joints, R, thetaC, usableW, usableH, ...}. Each piece:
+ *   {index, elements, folds, end, bbox, outerLen}
+ *   elements: [{kind:'straight', p0, p1, ang} | {kind:'arc', C, phi0, phi1}]
+ *   folds:    [{p, ang, turn}] — fold line runs from p across the band
+ *   end:      {p, ang, joinFold} — where the glue tab goes; joinFold is the
+ *             L/R turn consumed by this joint (null for a mid-run cut)
+ * placements: [{page, piece, x, y}] with (x, y) inside the usable area.
  */
-export function buildStrips(cycle, {
+export function buildPieces(cycle, {
   cellW, cellH, wallHeight,
-  margin = 8, tab = 12, gap = 6, wrap = true,
+  margin = 8, tab = 12, gap = 6,
+  maxTurn = 1.5 * Math.PI, maxBand = null, wrap = true,
 } = {}) {
+  const { width: W } = cycle;
   const steps = cycleSteps(cycle, { wrap });
   const n = steps.length;
-
-  // fold positions along the ribbon: after step k if the path turns L/R
-  const folds = []; // {pos, turn, stepIndex}
-  let total = 0;
-  for (let k = 0; k < n; k++) {
-    total += steps[k].dir === 'h' ? cellW : cellH;
-    if (steps[k].turn !== 'S' && k < n - 1) {
-      folds.push({ pos: total, turn: steps[k].turn, stepIndex: k });
-    }
+  const R = (W * cellW) / (2 * Math.PI);
+  const w = wallHeight;
+  if (w >= R) {
+    throw new Error(`wall height ${w} mm must be below the cylinder radius ${R.toFixed(1)} mm`);
   }
-  // The wrap-around joint (end of step n-1 back to start) is a strip joint,
-  // not a fold — the loop closes by gluing the last tab to strip 1's start.
-  const closingTurn = steps[n - 1].turn;
 
-  // strips run along the long edge of a landscape A4 page
-  const pageLength = Math.max(A4.w, A4.h) - 2 * margin;
-  const stripCapacity = pageLength - tab; // printed content per strip
-  if (stripCapacity <= 0) throw new Error('margin/tab leave no usable strip length');
+  const usableW = Math.max(A4.w, A4.h) - 2 * margin; // landscape page
+  const usableH = Math.min(A4.w, A4.h) - 2 * margin;
+  const thetaC = (2 * Math.PI) / W; // arc angle of one horizontal cell
+  // pieces are rotated to their start->end chord before placement, so the
+  // packing-friendly constraint is a cap on the rotated band height: slim
+  // pieces shelf-pack densely instead of one snake hogging a whole page
+  const bandCap = Math.min(usableH, maxBand ?? Math.max(3 * w, 45));
 
-  // pack: walk the ribbon, cutting strips of content <= stripCapacity with
-  // each cut placed mid-segment between folds
-  const strips = [];
-  let start = 0; // ribbon position where current strip starts
-  let fi = 0; // first fold index not yet assigned
-  while (start < total - 1e-9) {
-    const capEnd = start + stripCapacity;
-    let end;
-    if (capEnd >= total) {
-      end = total;
+  const leftOf = (a) => [Math.cos(a + Math.PI / 2), Math.sin(a + Math.PI / 2)];
+
+  // chain state for the piece under construction
+  let P, ang, elements, folds, pts, turnAcc, outerLen;
+  function resetPiece() {
+    P = [0, 0];
+    ang = 0;
+    elements = [];
+    folds = [];
+    pts = [[0, 0], [0, w]];
+    turnAcc = 0;
+    outerLen = 0;
+  }
+
+  function tabPoints(p, a) {
+    const d = [Math.cos(a), Math.sin(a)];
+    const nl = leftOf(a);
+    return [
+      [p[0], p[1]],
+      [p[0] + w * nl[0], p[1] + w * nl[1]],
+      [p[0] + w * nl[0] + tab * d[0], p[1] + w * nl[1] + tab * d[1]],
+      [p[0] + tab * d[0], p[1] + tab * d[1]],
+    ];
+  }
+
+  function bboxOf(points) {
+    let x0 = Infinity; let y0 = Infinity; let x1 = -Infinity; let y1 = -Infinity;
+    for (const [x, y] of points) {
+      if (x < x0) x0 = x;
+      if (y < y0) y0 = y;
+      if (x > x1) x1 = x;
+      if (y > y1) y1 = y;
+    }
+    return { x0, y0, x1, y1, w: x1 - x0, h: y1 - y0 };
+  }
+
+  // bbox of `points` after rotating the chord (origin -> endP) onto +x
+  function chordBBox(points, endP) {
+    const a = Math.hypot(endP[0], endP[1]) > 1e-9 ? Math.atan2(endP[1], endP[0]) : 0;
+    const ca = Math.cos(-a);
+    const sa = Math.sin(-a);
+    let x0 = Infinity; let y0 = Infinity; let x1 = -Infinity; let y1 = -Infinity;
+    for (const [x, y] of points) {
+      const rx = x * ca - y * sa;
+      const ry = x * sa + y * ca;
+      if (rx < x0) x0 = rx;
+      if (ry < y0) y0 = ry;
+      if (rx > x1) x1 = rx;
+      if (ry > y1) y1 = ry;
+    }
+    return { angle: a, x0, y0, w: x1 - x0, h: y1 - y0 };
+  }
+
+  // geometry of extending the chain by one cell (not yet applied)
+  function stepGeom(dir) {
+    if (dir === 'v') {
+      const d = [Math.cos(ang), Math.sin(ang)];
+      const nl = leftOf(ang);
+      const p1 = [P[0] + cellH * d[0], P[1] + cellH * d[1]];
+      return {
+        kind: 'straight',
+        p1,
+        ang1: ang,
+        newPts: [p1, [p1[0] + w * nl[0], p1[1] + w * nl[1]]],
+        len: cellH,
+        turn: 0,
+      };
+    }
+    // horizontal cell: arc with the centre on the free-edge side of travel
+    const nl = leftOf(ang);
+    const C = [P[0] + R * nl[0], P[1] + R * nl[1]];
+    const phi0 = Math.atan2(P[1] - C[1], P[0] - C[0]);
+    const phi1 = phi0 + thetaC;
+    const p1 = [C[0] + R * Math.cos(phi1), C[1] + R * Math.sin(phi1)];
+    const m = Math.max(2, Math.ceil(thetaC / (Math.PI / 30))); // ≤6° samples
+    const newPts = [];
+    for (let i = 1; i <= m; i++) {
+      const ph = phi0 + (thetaC * i) / m;
+      newPts.push([C[0] + R * Math.cos(ph), C[1] + R * Math.sin(ph)]);
+      newPts.push([C[0] + (R - w) * Math.cos(ph), C[1] + (R - w) * Math.sin(ph)]);
+    }
+    return { kind: 'arc', C, r: R, phi0, phi1, p1, ang1: ang + thetaC, newPts, len: cellW, turn: thetaC };
+  }
+
+  function applyStep(g) {
+    const last = elements[elements.length - 1];
+    if (g.kind === 'straight') {
+      if (last && last.kind === 'straight' && Math.abs(last.ang - ang) < 1e-12) {
+        last.p1 = g.p1; // extend the run
+      } else {
+        elements.push({ kind: 'straight', p0: [...P], p1: g.p1, ang });
+      }
+    } else if (last && last.kind === 'arc' && Math.abs(last.phi1 - g.phi0) < 1e-9
+               && Math.hypot(last.C[0] - g.C[0], last.C[1] - g.C[1]) < 1e-6) {
+      last.phi1 = g.phi1;
     } else {
-      // last fold at or before capEnd, and the next one after it
-      let lo = fi;
-      while (lo < folds.length && folds[lo].pos <= capEnd + 1e-9) lo++;
-      const prevFold = lo > fi ? folds[lo - 1].pos : start;
-      const nextFold = lo < folds.length ? folds[lo].pos : total;
-      end = Math.min(capEnd, (prevFold + nextFold) / 2);
-      // folds are at least one cell apart, so a mid-gap cut always clears
-      // both folds by `clearance` — but a capacity-limited cut can hug the
-      // fold before it; back off to the middle of the previous gap instead
-      const clearance = Math.min(2, Math.min(cellW, cellH) / 2);
-      if (lo > fi && end - prevFold < clearance) {
-        const before = lo - 1 > fi ? folds[lo - 2].pos : start;
-        end = (before + prevFold) / 2;
-      }
-      if (end <= start + 1e-9) {
-        // a single segment longer than the strip: hard cut at capacity
-        end = capEnd;
-      }
+      elements.push({ kind: 'arc', C: g.C, r: g.r, phi0: g.phi0, phi1: g.phi1 });
     }
-    const stripFolds = [];
-    while (fi < folds.length && folds[fi].pos < end - 1e-9) {
-      stripFolds.push({ pos: folds[fi].pos - start, turn: folds[fi].turn });
-      fi++;
-    }
-    strips.push({ index: strips.length + 1, length: end - start, folds: stripFolds });
-    start = end;
+    pts.push(...g.newPts);
+    P = g.p1;
+    ang = g.ang1;
+    turnAcc += g.turn;
+    outerLen += g.len;
   }
 
-  // layout: strips stack as rows on landscape A4
-  const pageHeight = Math.min(A4.w, A4.h) - 2 * margin;
-  const perPage = Math.max(1, Math.floor((pageHeight + gap) / (wallHeight + gap)));
-  const pages = [];
-  for (let i = 0; i < strips.length; i += perPage) {
-    pages.push({ strips: strips.slice(i, i + perPage).map((s) => s.index) });
+  const pieces = [];
+  function finalizePiece(joinFold) {
+    // rotate the piece so its start->end chord runs along +x (slimmest
+    // practical orientation for packing), then shift into its bbox
+    const bb = chordBBox(pts.concat(tabPoints(P, ang)), P);
+    const ca = Math.cos(-bb.angle);
+    const sa = Math.sin(-bb.angle);
+    const xf = ([x, y]) => [x * ca - y * sa - bb.x0, x * sa + y * ca - bb.y0];
+    for (const el of elements) {
+      if (el.kind === 'straight') {
+        el.p0 = xf(el.p0);
+        el.p1 = xf(el.p1);
+        el.ang -= bb.angle;
+      } else {
+        el.C = xf(el.C);
+        el.phi0 -= bb.angle;
+        el.phi1 -= bb.angle;
+      }
+    }
+    pieces.push({
+      index: pieces.length + 1,
+      elements,
+      folds: folds.map((f) => ({ ...f, p: xf(f.p), ang: f.ang - bb.angle })),
+      end: { p: xf(P), ang: ang - bb.angle, joinFold },
+      start: { p: xf([0, 0]), ang: -bb.angle },
+      bbox: { w: bb.w, h: bb.h },
+      outerLen,
+      turn: turnAcc,
+    });
   }
 
+  resetPiece();
+  let prevTurn = 'S'; // turn at the chain's current position (after step k-1)
+  let foldsPrinted = 0;
+  const joints = [];
+  for (let k = 0; k < n; k++) {
+    const g = stepGeom(steps[k].dir);
+    const bb = chordBBox(pts.concat(g.newPts, tabPoints(g.p1, g.ang1)), g.p1);
+    const fits = bb.w <= usableW && bb.h <= Math.min(usableH, bandCap)
+      && turnAcc + g.turn <= maxTurn + 1e-9;
+    if (!fits && outerLen > 0) {
+      // cut here: if the position is a junction the joint absorbs that fold
+      const joinFold = prevTurn !== 'S' ? prevTurn : null;
+      if (joinFold) foldsPrinted--; // it was recorded as a fold; reclaim it
+      if (joinFold) folds.pop();
+      finalizePiece(joinFold);
+      joints.push({ atJunction: !!joinFold });
+      resetPiece();
+      prevTurn = 'S';
+      k--;
+      continue;
+    }
+    applyStep(g);
+    if (steps[k].turn !== 'S' && k < n - 1) {
+      folds.push({ p: [...P], ang, turn: steps[k].turn });
+      foldsPrinted++;
+    }
+    prevTurn = steps[k].turn;
+  }
+  // close the loop: the final joint absorbs the closing turn (if any)
+  const closingFold = steps[n - 1].turn !== 'S' ? steps[n - 1].turn : null;
+  finalizePiece(closingFold);
+  joints.push({ atJunction: !!closingFold });
+
+  // shelf-pack pieces (in assembly order) onto landscape pages
+  const placements = [];
+  let pageCount = 1;
+  let x = 0;
+  let y = 0;
+  let rowH = 0;
+  for (const pc of pieces) {
+    if (x + pc.bbox.w > usableW + 1e-9) {
+      y += rowH + gap;
+      x = 0;
+      rowH = 0;
+    }
+    if (y + pc.bbox.h > usableH + 1e-9) {
+      pageCount++;
+      x = 0;
+      y = 0;
+      rowH = 0;
+    }
+    placements.push({ page: pageCount, piece: pc.index, x, y });
+    x += pc.bbox.w + gap;
+    rowH = Math.max(rowH, pc.bbox.h);
+  }
+
+  const totalTurns = steps.reduce((s, t) => s + (t.turn !== 'S' ? 1 : 0), 0);
   return {
-    strips,
-    totalLength: total,
-    foldCount: folds.length,
-    closingTurn,
-    wallHeight,
+    pieces,
+    placements,
+    pageCount,
+    totalOuterLength: pieces.reduce((s, p) => s + p.outerLen, 0),
+    foldsPrinted,
+    joints,
+    totalTurns,
+    R,
+    thetaC,
+    wallHeight: w,
     tab,
     margin,
     gap,
-    pageLength,
-    stripCapacity,
-    perPage,
-    pages,
+    maxTurn,
+    usableW,
+    usableH,
   };
+}
+
+/** Sample a piece's outer and inner edges as polylines (for drawing/tests). */
+export function pieceOutline(piece, wallHeight, { arcStep = Math.PI / 72 } = {}) {
+  const outer = [];
+  const inner = [];
+  const push = (arr, p) => {
+    const q = arr[arr.length - 1];
+    if (!q || Math.hypot(q[0] - p[0], q[1] - p[1]) > 1e-9) arr.push(p);
+  };
+  for (const el of piece.elements) {
+    if (el.kind === 'straight') {
+      const nl = [Math.cos(el.ang + Math.PI / 2), Math.sin(el.ang + Math.PI / 2)];
+      push(outer, el.p0);
+      push(outer, el.p1);
+      push(inner, [el.p0[0] + wallHeight * nl[0], el.p0[1] + wallHeight * nl[1]]);
+      push(inner, [el.p1[0] + wallHeight * nl[0], el.p1[1] + wallHeight * nl[1]]);
+    } else {
+      const span = el.phi1 - el.phi0;
+      const m = Math.max(2, Math.ceil(span / arcStep));
+      for (let i = 0; i <= m; i++) {
+        const ph = el.phi0 + (span * i) / m;
+        const co = Math.cos(ph);
+        const si = Math.sin(ph);
+        push(outer, [el.C[0] + el.r * co, el.C[1] + el.r * si]);
+        push(inner, [el.C[0] + (el.r - wallHeight) * co, el.C[1] + (el.r - wallHeight) * si]);
+      }
+    }
+  }
+  return { outer, inner };
 }
 
 // ─────────────────── unrolled sheet -> A4 tiles ───────────────────

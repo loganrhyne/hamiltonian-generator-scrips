@@ -2,7 +2,7 @@
 // All coordinates arrive in mm; jsPDF documents are created in mm units so
 // templates print at true scale (print at 100% / "actual size").
 
-import { A4 } from './geometry.js';
+import { A4, pieceOutline } from './geometry.js';
 
 function getJsPDF() {
   const lib = globalThis.jspdf;
@@ -46,82 +46,134 @@ function specBlock(doc, stats, x, y) {
   return y + rows.length * 5;
 }
 
-// ─────────────────── wall strips PDF ───────────────────
-export function makeStripsPDF(stripData, stats) {
+function polyline(doc, pts, closed = false) {
+  for (let i = 0; i + 1 < pts.length; i++) {
+    doc.line(pts[i][0], pts[i][1], pts[i + 1][0], pts[i + 1][1]);
+  }
+  if (closed && pts.length > 1) {
+    doc.line(pts[pts.length - 1][0], pts[pts.length - 1][1], pts[0][0], pts[0][1]);
+  }
+}
+
+// ─────────────────── wall pieces PDF ───────────────────
+export function makePiecesPDF(pieceData, stats) {
   const JsPDF = getJsPDF();
   const doc = new JsPDF({ orientation: 'landscape', unit: 'mm', format: 'a4' });
-  const { strips, pages, wallHeight, tab, margin, gap, totalLength } = stripData;
+  const {
+    pieces, placements, pageCount, totalOuterLength, wallHeight: w,
+    tab, margin, R,
+  } = pieceData;
 
   // cover / assembly sheet
-  header(doc, 'HAMILTONIAN LAMP — WALL STRIPS', 'cut, fold at the marks, join tabs in order');
+  header(doc, 'HAMILTONIAN LAMP — WALL PIECES',
+    'curved pieces follow the cylinder: arcs lie flat, rectangles stand tall');
   let y = specBlock(doc, stats, 14, 38);
   doc.setFontSize(9);
   doc.setTextColor(...INK);
   const notes = [
-    `ribbon: ${(totalLength / 1000).toFixed(2)} m total -> ${strips.length} strips on ${pages.length} sheets`,
+    `wall ribbon: ${(totalOuterLength / 1000).toFixed(2)} m along the shade -> ${pieces.length} pieces on ${pageCount} sheets`,
+    `horizontal runs are ring arcs (outer radius ${R.toFixed(1)} mm, inner ${(R - w).toFixed(1)} mm);`,
+    'vertical runs are straight; the printed shape is the wall unfolded flat.',
     '',
     'PRINT AT 100% SCALE (no "fit to page").',
-    'Cut each strip on the solid outline. Fold 90 deg at each dashed line:',
-    `  tick above the strip + blue  = path turns LEFT`,
-    `  tick below the strip + red   = path turns RIGHT`,
-    '(directions as drawn on the unrolled path template, walking left to right)',
-    `Glue the hatched ${tab} mm tab under the start of the next strip.`,
-    `Strip ${String(strips.length).padStart(3, '0')} closes the loop: its tab glues under strip 001.`,
-    'Transfer the path template onto the shade paper, then stand the folded',
-    'ribbon on the path line and glue, working around the cylinder.',
+    'Cut on the solid outline. The edge that traces the drawn path (fold ticks',
+    'on its side point AWAY from the piece) glues to the shade; the opposite',
+    'edge hangs free toward the bulb.',
+    'Fold 90 deg at each dashed line: blue tick past the shade edge = path',
+    'turns LEFT on the template; red tick past the free edge = turns RIGHT.',
+    `Glue each hatched ${tab} mm tab under the start of the next piece; a`,
+    'dashed colored end line means that joint is also a 90 deg corner.',
+    `Piece ${String(pieces.length).padStart(3, '0')} closes the loop back onto piece 001.`,
+    'Test-fit the first corner against the path template before gluing.',
   ];
   for (const line of notes) {
     y += 5;
     doc.text(line, 14, y);
   }
 
-  // strip pages
-  for (const page of pages) {
-    doc.addPage('a4', 'landscape');
-    let rowY = margin;
-    for (const idx of page.strips) {
-      const s = strips[idx - 1];
-      const x0 = margin;
-      const label = `S${String(s.index).padStart(3, '0')}`;
-      const next = s.index === strips.length ? 'S001' : `S${String(s.index + 1).padStart(3, '0')}`;
+  // piece pages
+  const byPage = new Map();
+  for (const pl of placements) {
+    if (!byPage.has(pl.page)) byPage.set(pl.page, []);
+    byPage.get(pl.page).push(pl);
+  }
 
-      // strip number above the strip
+  for (const [, pls] of [...byPage.entries()].sort((a, b) => a[0] - b[0])) {
+    doc.addPage('a4', 'landscape');
+    for (const pl of pls) {
+      const pc = pieces[pl.piece - 1];
+      const ox = margin + pl.x;
+      const oy = margin + pl.y;
+      const T = (p) => [ox + p[0], oy + p[1]];
+      const dirOf = (a) => [Math.cos(a), Math.sin(a)];
+      const leftOf = (a) => [Math.cos(a + Math.PI / 2), Math.sin(a + Math.PI / 2)];
+
+      const { outer, inner } = pieceOutline(pc, w);
+
+      // fold lines first (under the outline)
+      for (const f of pc.folds) {
+        const nl = leftOf(f.ang);
+        const p0 = T(f.p);
+        const p1 = T([f.p[0] + w * nl[0], f.p[1] + w * nl[1]]);
+        const isL = f.turn === 'L';
+        doc.setDrawColor(...(isL ? BLUE : RED));
+        doc.setLineWidth(0.18);
+        doc.setLineDashPattern([1.2, 1.2], 0);
+        doc.line(p0[0], p0[1], p1[0], p1[1]);
+        doc.setLineDashPattern([], 0);
+        if (isL) {
+          doc.line(p0[0], p0[1], p0[0] - 1.6 * nl[0], p0[1] - 1.6 * nl[1]);
+        } else {
+          doc.line(p1[0], p1[1], p1[0] + 1.6 * nl[0], p1[1] + 1.6 * nl[1]);
+        }
+      }
+
+      // glue tab at the end
+      const d = dirOf(pc.end.ang);
+      const nl = leftOf(pc.end.ang);
+      const e0 = pc.end.p;
+      const e1 = [e0[0] + w * nl[0], e0[1] + w * nl[1]];
+      const e2 = [e1[0] + tab * d[0], e1[1] + tab * d[1]];
+      const e3 = [e0[0] + tab * d[0], e0[1] + tab * d[1]];
+      doc.setDrawColor(...GREY);
+      doc.setLineWidth(0.15);
+      const q = (s, t) => [
+        e0[0] + s * tab * d[0] + t * w * nl[0],
+        e0[1] + s * tab * d[1] + t * w * nl[1],
+      ];
+      for (let a = 0; a <= 0.6; a += 0.15) {
+        // diagonal hatch in the quad's affine param space
+        const A = T(q(a, 0));
+        const B = T(q(a + 0.4, 1));
+        doc.line(A[0], A[1], B[0], B[1]);
+      }
+      // tab outline (sides + far end); the band-side edge is the joint line
+      doc.setDrawColor(...INK);
+      doc.setLineWidth(0.3);
+      polyline(doc, [T(e1), T(e2), T(e3), T(e0)]);
+      // joint line: dashed + colored when the joint is also a 90° corner
+      if (pc.end.joinFold) {
+        const isL = pc.end.joinFold === 'L';
+        doc.setDrawColor(...(isL ? BLUE : RED));
+        doc.setLineWidth(0.18);
+        doc.setLineDashPattern([1.2, 1.2], 0);
+        doc.line(T(e0)[0], T(e0)[1], T(e1)[0], T(e1)[1]);
+        doc.setLineDashPattern([], 0);
+      }
+
+      // cut outline: outer edge forward, end cap, inner edge back (closed)
+      const boundary = outer.concat([...inner].reverse());
+      doc.setDrawColor(...INK);
+      doc.setLineWidth(0.3);
+      polyline(doc, boundary.map(T), true);
+
+      // label at the start of the piece (travel always starts heading +x)
+      const next = pc.index === pieces.length ? 'P001' : `P${String(pc.index + 1).padStart(3, '0')}`;
       doc.setFont('courier', 'normal');
       doc.setFontSize(6);
       doc.setTextColor(...GREY);
-      doc.text(`${label}  ->  joins ${next}`, x0, rowY - 0.8);
-
-      // fold marks
-      for (const f of s.folds) {
-        const fx = x0 + f.pos;
-        const left = f.turn === 'L';
-        doc.setDrawColor(...(left ? BLUE : RED));
-        doc.setLineWidth(0.18);
-        doc.setLineDashPattern([1.2, 1.2], 0);
-        doc.line(fx, rowY, fx, rowY + wallHeight);
-        doc.setLineDashPattern([], 0);
-        // direction tick outside the strip
-        if (left) doc.line(fx, rowY - 1.6, fx, rowY);
-        else doc.line(fx, rowY + wallHeight, fx, rowY + wallHeight + 1.6);
-      }
-
-      // glue tab (hatched) after the content
-      const tabX = x0 + s.length;
-      doc.setDrawColor(...GREY);
-      doc.setLineWidth(0.15);
-      for (let hx = 0; hx < tab; hx += 2.5) {
-        doc.line(tabX + hx, rowY + wallHeight, Math.min(tabX + hx + wallHeight, tabX + tab), rowY + Math.max(0, wallHeight - (tab - hx)));
-      }
-
-      // cut outline (content + tab), drawn last so it sits on top
-      doc.setDrawColor(...INK);
-      doc.setLineWidth(0.3);
-      doc.rect(x0, rowY, s.length + tab, wallHeight);
-      // tab boundary
-      doc.setLineWidth(0.18);
-      doc.line(tabX, rowY, tabX, rowY + wallHeight);
-
-      rowY += wallHeight + gap;
+      const lp = T(pc.start.p);
+      doc.text(`P${String(pc.index).padStart(3, '0')} > ${next}`, lp[0] + 0.8, lp[1] - 1);
     }
   }
   return doc;

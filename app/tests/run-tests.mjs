@@ -3,7 +3,9 @@
 // Run: node app/tests/run-tests.mjs
 
 import { generateCycle, verifyCycle, cycleSegments, cycleSteps } from '../js/cycle.js';
-import { buildSheet, buildStrips, buildTiles, buildWallMesh, computeStats, A4 } from '../js/geometry.js';
+import {
+  buildSheet, buildPieces, buildTiles, buildWallMesh, computeStats, pieceOutline, A4,
+} from '../js/geometry.js';
 
 let passed = 0;
 let failed = 0;
@@ -104,57 +106,96 @@ for (const [w, h] of [[8, 18], [40, 40], [100, 100]]) {
   check(approx(mmTotal, expect, 1e-6), `sheet mm length conserved (${mmTotal.toFixed(3)})`);
 }
 
-// ─────────────────── 5. wall strips ───────────────────
-console.log('5. wall strips');
-for (const [w, h, cellW, cellH, wall] of [[8, 18, 60, 60, 20], [100, 100, 10, 10, 15], [12, 30, 6, 5, 8]]) {
+// ─────────────────── 5. wall pieces (curved) ───────────────────
+console.log('5. wall pieces');
+for (const [w, h, cellW, cellH, wall] of [[8, 18, 60, 60, 20], [100, 100, 10, 10, 15], [12, 30, 6, 5, 8], [30, 30, 12, 12, 12]]) {
   const cyc = generateCycle(w, h, { seed: 23 });
-  const sd = buildStrips(cyc, { cellW, cellH, wallHeight: wall });
+  const pd = buildPieces(cyc, { cellW, cellH, wallHeight: wall });
   const steps = cycleSteps(cyc);
+  const label = `${w}x${h}`;
+
+  // outer-edge (shade-side) length is conserved exactly
   const expect = steps.reduce((s, x) => s + (x.dir === 'h' ? cellW : cellH), 0);
-  const sum = sd.strips.reduce((s, x) => s + x.length, 0);
-  check(approx(sum, expect, 1e-6), `strip lengths sum to ribbon (${w}x${h})`);
-  check(approx(sum, sd.totalLength, 1e-6), 'totalLength agrees');
-  check(sd.strips.every((s) => s.length <= sd.stripCapacity + 1e-6), 'every strip fits its page');
-  check(
-    sd.strips.every((s) => s.folds.every((f) => f.pos > -1e-9 && f.pos < s.length + 1e-9)),
-    'folds inside their strip',
-  );
-  const foldSum = sd.strips.reduce((s, x) => s + x.folds.length, 0);
-  check(foldSum === sd.foldCount, `fold count conserved (${foldSum})`);
-  // reconstruct global fold positions from strip-local ones
-  const globals = [];
-  let off = 0;
-  for (const s of sd.strips) {
-    for (const f of s.folds) globals.push(off + f.pos);
-    off += s.length;
+  const sum = pd.pieces.reduce((s, p) => s + p.outerLen, 0);
+  check(approx(sum, expect, 1e-6), `piece outer lengths sum to ribbon (${label})`);
+  check(approx(sum, pd.totalOuterLength, 1e-6), 'totalOuterLength agrees');
+
+  // every horizontal cell contributes exactly 2π/W of arc
+  const hCells = steps.filter((s) => s.dir === 'h').length;
+  const turnSum = pd.pieces.reduce((s, p) => s + p.turn, 0);
+  check(approx(turnSum, hCells * pd.thetaC, 1e-6), `arc angles sum to h-cells * 2π/W (${label})`);
+
+  // folds + fold-bearing joints account for every turn in the cycle
+  check(pd.joints.length === pd.pieces.length, 'one joint per piece');
+  const jointFolds = pd.joints.filter((j) => j.atJunction).length;
+  check(pd.foldsPrinted + jointFolds === pd.totalTurns,
+    `folds (${pd.foldsPrinted}) + corner joints (${jointFolds}) = turns (${pd.totalTurns})`);
+  const foldCount = pd.pieces.reduce((s, p) => s + p.folds.length, 0);
+  check(foldCount === pd.foldsPrinted, 'piece folds match foldsPrinted');
+
+  // geometry: pieces fit the printable area and respect the curl cap
+  check(pd.pieces.every((p) => p.bbox.w <= pd.usableW + 1e-6 && p.bbox.h <= pd.usableH + 1e-6),
+    `every piece bbox fits A4 usable area (${label})`);
+  check(pd.pieces.every((p) => p.turn <= pd.maxTurn + 1e-9), 'accumulated turn capped');
+
+  // element chains are continuous (each element starts where the last ended)
+  let chained = true;
+  for (const p of pd.pieces) {
+    let prev = p.start.p;
+    for (const el of p.elements) {
+      const s0 = el.kind === 'straight' ? el.p0
+        : [el.C[0] + el.r * Math.cos(el.phi0), el.C[1] + el.r * Math.sin(el.phi0)];
+      if (Math.hypot(s0[0] - prev[0], s0[1] - prev[1]) > 1e-6) chained = false;
+      prev = el.kind === 'straight' ? el.p1
+        : [el.C[0] + el.r * Math.cos(el.phi1), el.C[1] + el.r * Math.sin(el.phi1)];
+    }
+    if (Math.hypot(prev[0] - p.end.p[0], prev[1] - p.end.p[1]) > 1e-6) chained = false;
   }
-  let t = 0;
-  const expected = [];
-  for (let k = 0; k < steps.length; k++) {
-    t += steps[k].dir === 'h' ? cellW : cellH;
-    if (steps[k].turn !== 'S' && k < steps.length - 1) expected.push(t);
+  check(chained, `piece element chains are continuous (${label})`);
+
+  // sampled outline length matches outerLen (within arc-sampling tolerance)
+  let outlineOk = true;
+  for (const p of pd.pieces) {
+    const { outer } = pieceOutline(p, wall);
+    let len = 0;
+    for (let i = 0; i + 1 < outer.length; i++) {
+      len += Math.hypot(outer[i + 1][0] - outer[i][0], outer[i + 1][1] - outer[i][1]);
+    }
+    if (Math.abs(len - p.outerLen) > p.outerLen * 0.002 + 0.01) outlineOk = false;
   }
-  check(
-    globals.length === expected.length && globals.every((g, i) => approx(g, expected[i], 1e-6)),
-    'global fold positions preserved across cuts',
-  );
-  // no fold sits closer than 1mm to a cut unless cells are tinier than 2mm
-  const minCell = Math.min(cellW, cellH);
-  off = 0;
-  let clear = true;
-  for (const s of sd.strips.slice(0, -1)) {
-    off += s.length;
-    for (const g of globals) {
-      if (Math.abs(g - off) < Math.min(1, minCell / 2 - 1e-9)) clear = false;
+  check(outlineOk, `sampled outlines match outer lengths (${label})`);
+
+  // packing: every piece placed once, inside the page, no bbox overlaps
+  check(pd.placements.length === pd.pieces.length, 'every piece placed');
+  check(pd.placements.every((pl) => {
+    const pc = pd.pieces[pl.piece - 1];
+    return pl.x >= 0 && pl.y >= 0
+      && pl.x + pc.bbox.w <= pd.usableW + 1e-6 && pl.y + pc.bbox.h <= pd.usableH + 1e-6;
+  }), `placements inside the page (${label})`);
+  let overlap = false;
+  const byPage = new Map();
+  for (const pl of pd.placements) {
+    if (!byPage.has(pl.page)) byPage.set(pl.page, []);
+    byPage.get(pl.page).push(pl);
+  }
+  for (const pls of byPage.values()) {
+    for (let i = 0; i < pls.length; i++) {
+      for (let j = i + 1; j < pls.length; j++) {
+        const a = pls[i]; const b = pls[j];
+        const A = pd.pieces[a.piece - 1].bbox; const B = pd.pieces[b.piece - 1].bbox;
+        if (a.x < b.x + B.w && b.x < a.x + A.w && a.y < b.y + B.h && b.y < a.y + A.h) overlap = true;
+      }
     }
   }
-  check(clear, 'cuts keep clearance from folds');
-  // page layout: strips per page never exceeds capacity
-  check(sd.pages.every((p) => p.strips.length <= sd.perPage), 'strip page rows fit');
-  check(
-    sd.pages.flatMap((p) => p.strips).length === sd.strips.length,
-    'every strip landed on a page',
-  );
+  check(!overlap, `no piece bboxes overlap on a page (${label})`);
+}
+
+// wall height taller than the radius must be rejected
+{
+  const cyc = generateCycle(8, 8, { seed: 1 });
+  let threw = false;
+  try { buildPieces(cyc, { cellW: 10, cellH: 10, wallHeight: 14 }); } catch { threw = true; }
+  check(threw, 'wall height >= radius rejected (R=12.7mm, wall=14mm)');
 }
 
 // ─────────────────── 6. A4 tiling ───────────────────
@@ -222,15 +263,15 @@ for (const [w, h] of [[20, 20], [50, 50], [100, 40], [100, 100]]) {
     const tGen = performance.now() - t0;
     const t1 = performance.now();
     const sheet = buildSheet(cyc, { cellW: 10, cellH: 10 });
-    const strips = buildStrips(cyc, { cellW: 10, cellH: 10, wallHeight: 15 });
+    const pieces = buildPieces(cyc, { cellW: 10, cellH: 10, wallHeight: 15 });
     const tiles = buildTiles(sheet);
     const mesh = buildWallMesh(cyc, { cellW: 10, cellH: 10, wallHeight: 15 });
     const tLayout = performance.now() - t1;
     perf.push({
       size: `${w}x${h}`, tree,
       gen_ms: +tGen.toFixed(1), layout_ms: +tLayout.toFixed(1),
-      strips: strips.strips.length, tilePages: tiles.pages.length,
-      tris: mesh.indices.length / 3,
+      pieces: pieces.pieces.length, piecePages: pieces.pageCount,
+      tilePages: tiles.pages.length, tris: mesh.indices.length / 3,
     });
     check(tGen < 500, `gen ${w}x${h} ${tree} under 500 ms (${tGen.toFixed(1)} ms)`);
     check(tLayout < 2000, `layout ${w}x${h} ${tree} under 2 s (${tLayout.toFixed(1)} ms)`);
