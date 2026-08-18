@@ -238,6 +238,46 @@ html, body {
   display: block;
 }
 
+.stage[data-view="3d"] #view2d,
+.stage[data-view="flat"] #view {
+  display: none;
+}
+
+/* ── view tabs ───────────────────────────────── */
+.stage-tabs {
+  position: absolute;
+  top: 14px;
+  left: 52px;
+  display: flex;
+  gap: 6px;
+  z-index: 2;
+}
+
+.tab {
+  font-family: var(--mono);
+  font-size: 10px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  cursor: pointer;
+  padding: 5px 11px;
+  border-radius: 0;
+  background: transparent;
+  border: 1px solid var(--line);
+  color: var(--text-dim);
+  transition: all 0.15s;
+}
+
+.tab:hover {
+  border-color: var(--blueprint);
+  color: var(--text);
+}
+
+.tab.is-active {
+  border-color: var(--glow-deep);
+  color: var(--glow);
+  background: rgba(255, 180, 94, 0.08);
+}
+
 .stage-corner {
   position: absolute;
   width: 26px;

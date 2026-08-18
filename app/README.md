@@ -2,7 +2,8 @@
 
 Interactive, client-side designer for the cylindrical papercraft lamps. Set the
 grid (cells around × cells tall), the cell size in mm, and the wall height in
-mm; get a live 3D preview of the assembled lamp and two print-ready A4 PDFs.
+mm; get a live preview of the assembled lamp — in 3D or unrolled flat — and
+two print-ready A4 PDFs.
 
 ## Run it
 
@@ -14,6 +15,18 @@ Google fonts degrade gracefully offline). Browsers won't load ES modules from
 cd app && python3 -m http.server 8000
 # -> http://localhost:8000
 ```
+
+## Views
+
+The stage has two tabs:
+
+- **3d** — the assembled lamp: translucent shade, inward wall ribbon, warm bulb.
+  Drag to orbit, scroll to zoom.
+- **unrolled** — the cylinder cut open and laid flat: a light cell grid with the
+  Hamiltonian path drawn over it, in the same frame the tile PDF prints in
+  (x = circumference, y = height, origin top-left). The dashed verticals are the
+  glue seam, so the two edges meet when rolled. The grid is dropped
+  automatically when cells fall below ~6 px on screen, where it reads as noise.
 
 ## Controls
 
@@ -51,6 +64,8 @@ cd app && python3 -m http.server 8000
   (all pure functions, Node-testable)
 - `js/viewer.js` — three.js scene (translucent shade, inward wall ribbon,
   warm bulb light)
+- `js/unrolled.js` — 2D canvas view of the flat sheet; `fitTransform` is pure
+  and Node-testable
 - `js/pdf.js` — renders the geometry layouts into the two jsPDF documents
 - `js/main.js` — UI wiring
 

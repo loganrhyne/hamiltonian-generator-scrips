@@ -88,11 +88,16 @@
     </section>
   </aside>
 
-  <section class="stage reveal" style="--d:2">
+  <section class="stage reveal" style="--d:2" id="stage" data-view="3d">
     <canvas id="view"></canvas>
+    <canvas id="view2d"></canvas>
     <div class="stage-corner tl"></div>
     <div class="stage-corner br"></div>
-    <p class="stage-hint">drag to orbit · scroll to zoom</p>
+    <div class="stage-tabs">
+      <button id="tab-3d" class="tab is-active" type="button">3d</button>
+      <button id="tab-flat" class="tab" type="button">unrolled</button>
+    </div>
+    <p class="stage-hint" id="stage-hint">drag to orbit · scroll to zoom</p>
     <p class="stage-readout" id="readout"></p>
   </section>
 </main>

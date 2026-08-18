@@ -4,6 +4,7 @@ import { generateCycle, verifyCycle } from './cycle.js';
 import { buildSheet, buildPieces, buildTiles, computeStats } from './geometry.js';
 import { makePiecesPDF, makeTilesPDF } from './pdf.js';
 import { LampViewer } from './viewer.js';
+import { UnrolledView } from './unrolled.js';
 
 const $ = (id) => document.getElementById(id);
 const els = {
@@ -13,10 +14,26 @@ const els = {
   pathNote: $('path-note'), readout: $('readout'),
   dlStrips: $('dl-strips'), dlTiles: $('dl-tiles'),
   dlStripsSub: $('dl-strips-sub'), dlTilesSub: $('dl-tiles-sub'),
+  stage: $('stage'), stageHint: $('stage-hint'),
+  tab3d: $('tab-3d'), tabFlat: $('tab-flat'),
 };
 
 const viewer = new LampViewer($('view'));
+const flat = new UnrolledView($('view2d'));
 const state = { cycle: null, params: null, stats: null, pieces: null, tiles: null, sheet: null };
+
+const HINTS = { '3d': 'drag to orbit · scroll to zoom', flat: 'unrolled sheet · dashed edges are the glue seam' };
+
+function setView(view) {
+  els.stage.dataset.view = view;
+  els.tab3d.classList.toggle('is-active', view === '3d');
+  els.tabFlat.classList.toggle('is-active', view === 'flat');
+  els.stageHint.textContent = HINTS[view];
+  if (view === '3d') viewer.resize(); else flat.draw();
+}
+
+els.tab3d.addEventListener('click', () => setView('3d'));
+els.tabFlat.addEventListener('click', () => setView('flat'));
 
 function readParams() {
   const even = (el) => {
@@ -95,6 +112,7 @@ function rebuild() {
   state.tiles = buildTiles(state.sheet);
 
   const tMesh = viewer.update(state.cycle, p);
+  flat.update(state.sheet, state.stats);
   renderSpecs();
   els.readout.textContent =
     `${p.cols}×${p.rows} · Ø${fmt(state.stats.diameter, 0)} × ${fmt(state.stats.heightMM, 0)} mm · ` +

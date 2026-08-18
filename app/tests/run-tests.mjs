@@ -6,6 +6,7 @@ import { generateCycle, verifyCycle, cycleSegments, cycleSteps } from '../js/cyc
 import {
   buildSheet, buildPieces, buildTiles, buildWallMesh, computeStats, pieceOutline, A4,
 } from '../js/geometry.js';
+import { fitTransform } from '../js/unrolled.js';
 
 let passed = 0;
 let failed = 0;
@@ -287,6 +288,42 @@ console.log('9. stats');
   check(approx(s.diameter, 152.78874536821954), 'floor-lamp design target Ø152.8mm reproduced');
   check(approx(s.heightMM, 1080), 'floor-lamp height 1080mm reproduced');
   check(A4.w === 210 && A4.h === 297, 'A4 dims');
+}
+
+// ─────────────────── 10. unrolled view transform ───────────────────
+console.log('10. unrolled view fit');
+{
+  const cyc = generateCycle(8, 18, { seed: 42, tree: 'prim' });
+  const sheet = buildSheet(cyc, { cellW: 60, cellH: 60 });
+  const pad = 30;
+  const [vw, vh] = [900, 600];
+  const { k, ox, oy } = fitTransform(sheet, vw, vh, pad);
+
+  check(k > 0, 'fit produces a positive scale');
+  check(sheet.widthMM * k <= vw - 2 * pad + 1e-9, 'scaled width fits inside padding');
+  check(sheet.heightMM * k <= vh - 2 * pad + 1e-9, 'scaled height fits inside padding');
+  // tall sheet in a wide viewport -> height is the binding constraint
+  check(approx(sheet.heightMM * k, vh - 2 * pad, 1e-9), 'tall sheet binds on height');
+  check(approx(ox + (sheet.widthMM * k) / 2, vw / 2, 1e-9), 'sheet is centred horizontally');
+  check(approx(oy + (sheet.heightMM * k) / 2, vh / 2, 1e-9), 'sheet is centred vertically');
+
+  // aspect preserved: a square sheet maps to a square
+  const sq = buildSheet(generateCycle(10, 10, { seed: 1 }), { cellW: 20, cellH: 20 });
+  const f2 = fitTransform(sq, 800, 400, 20);
+  check(approx(sq.widthMM * f2.k, sq.heightMM * f2.k, 1e-9), 'square sheet stays square');
+
+  // every path point lands inside the drawn sheet rect
+  let inside = true;
+  for (const s2 of sheet.segments) {
+    for (const [x, y] of [[s2.x1, s2.y1], [s2.x2, s2.y2]]) {
+      if (x < -1e-9 || x > sheet.widthMM + 1e-9 || y < -1e-9 || y > sheet.heightMM + 1e-9) inside = false;
+    }
+  }
+  check(inside, 'all path segments lie within the sheet bounds');
+
+  // degenerate viewports degrade to a no-draw rather than NaN
+  const tiny = fitTransform(sheet, 10, 10, pad);
+  check(tiny.k === 0, 'viewport smaller than padding yields k = 0');
 }
 
 // ─────────────────── summary ───────────────────
