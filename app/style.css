@@ -1,0 +1,335 @@
+/* Hamiltonian Lamp Designer — drafting-table cyanotype.
+   Deep ink blue, hairline blueprint grid, one warm amber accent: the lamp. */
+
+:root {
+  --ink: #081120;
+  --ink-2: #0c1828;
+  --line: #1d3450;
+  --line-soft: #142640;
+  --blueprint: #3f6fa8;
+  --text: #c3d4e8;
+  --text-dim: #6d84a0;
+  --glow: #ffb45e;
+  --glow-deep: #e08a2e;
+  --paper: #f3ead8;
+  --mono: "IBM Plex Mono", ui-monospace, "SF Mono", monospace;
+  --display: "Big Shoulders Display", "Arial Narrow", sans-serif;
+}
+
+* { box-sizing: border-box; }
+
+html, body {
+  margin: 0;
+  height: 100%;
+  background: var(--ink);
+  color: var(--text);
+  font-family: var(--mono);
+  font-size: 13px;
+}
+
+.frame {
+  display: grid;
+  grid-template-columns: 348px 1fr;
+  height: 100%;
+  gap: 0;
+}
+
+/* ── control panel ───────────────────────────── */
+.panel {
+  border-right: 1px solid var(--line);
+  background:
+    linear-gradient(180deg, rgba(63, 111, 168, 0.06), transparent 200px),
+    var(--ink-2);
+  overflow-y: auto;
+  padding: 26px 22px 40px;
+  display: flex;
+  flex-direction: column;
+  gap: 26px;
+}
+
+.masthead h1 {
+  font-family: var(--display);
+  font-weight: 700;
+  font-size: 46px;
+  line-height: 0.88;
+  letter-spacing: 0.01em;
+  margin: 0;
+  text-transform: uppercase;
+  color: var(--paper);
+}
+
+.masthead h1::after {
+  content: "";
+  display: block;
+  width: 56px;
+  height: 4px;
+  margin-top: 10px;
+  background: var(--glow);
+  box-shadow: 0 0 18px 2px rgba(255, 180, 94, 0.55);
+}
+
+.masthead-sub {
+  margin: 10px 0 0;
+  color: var(--text-dim);
+  font-size: 11px;
+  letter-spacing: 0.08em;
+}
+
+.block h2 {
+  font-family: var(--display);
+  font-weight: 500;
+  font-size: 19px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--text);
+  margin: 0 0 12px;
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  border-bottom: 1px solid var(--line);
+  padding-bottom: 7px;
+}
+
+.block h2 em {
+  font-family: var(--mono);
+  font-style: normal;
+  font-size: 10px;
+  color: var(--text-dim);
+  letter-spacing: 0.05em;
+  margin-left: auto;
+}
+
+.block-no {
+  color: var(--glow);
+  font-size: 12px;
+  font-family: var(--mono);
+}
+
+.field-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px 12px;
+}
+
+.field span {
+  display: block;
+  font-size: 10px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--text-dim);
+  margin-bottom: 4px;
+}
+
+.field span em { font-style: normal; color: var(--line); }
+.field span em::before { content: "· "; }
+
+.field input,
+.field select {
+  width: 100%;
+  background: var(--ink);
+  border: 1px solid var(--line);
+  color: var(--paper);
+  font-family: var(--mono);
+  font-size: 14px;
+  padding: 7px 9px;
+  border-radius: 0;
+  outline: none;
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+
+.field input:focus,
+.field select:focus {
+  border-color: var(--glow);
+  box-shadow: 0 0 0 1px rgba(255, 180, 94, 0.35);
+}
+
+/* kill spinner chrome, keep keyboard stepping */
+.field input::-webkit-outer-spin-button,
+.field input::-webkit-inner-spin-button { -webkit-appearance: none; }
+
+.btn-row { margin-top: 12px; }
+.btn-col { display: flex; flex-direction: column; gap: 10px; }
+
+.btn {
+  font-family: var(--mono);
+  cursor: pointer;
+  border-radius: 0;
+  transition: all 0.15s;
+  text-align: left;
+}
+
+.btn-ghost {
+  background: transparent;
+  border: 1px dashed var(--blueprint);
+  color: var(--blueprint);
+  padding: 7px 12px;
+  font-size: 12px;
+}
+
+.btn-ghost:hover { border-style: solid; color: var(--text); }
+
+.btn-solid {
+  background: var(--glow);
+  border: 1px solid var(--glow-deep);
+  color: #2a1c08;
+  padding: 11px 14px;
+  font-size: 13px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  box-shadow: 0 0 0 0 rgba(255, 180, 94, 0);
+}
+
+.btn-solid b { font-size: 14px; letter-spacing: 0.04em; }
+.btn-solid span { font-size: 10px; opacity: 0.75; }
+
+.btn-solid:hover {
+  box-shadow: 0 0 22px 1px rgba(255, 180, 94, 0.35);
+  transform: translateY(-1px);
+}
+
+.btn-solid:disabled {
+  background: var(--line-soft);
+  border-color: var(--line);
+  color: var(--text-dim);
+  cursor: wait;
+  transform: none;
+  box-shadow: none;
+}
+
+.specs {
+  margin: 0;
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: 4px 14px;
+  font-size: 11.5px;
+}
+
+.specs dt { color: var(--text-dim); }
+.specs dd { margin: 0; color: var(--paper); text-align: right; }
+.specs dd.warn { color: var(--glow); }
+
+.note {
+  min-height: 1em;
+  margin: 10px 0 0;
+  font-size: 10.5px;
+  color: var(--text-dim);
+  font-style: italic;
+}
+
+/* ── stage / viewport ────────────────────────── */
+.stage {
+  position: relative;
+  background:
+    radial-gradient(1200px 800px at 65% 38%, rgba(63, 111, 168, 0.13), transparent 70%),
+    repeating-linear-gradient(0deg, transparent 0 39px, rgba(63, 111, 168, 0.10) 39px 40px),
+    repeating-linear-gradient(90deg, transparent 0 39px, rgba(63, 111, 168, 0.10) 39px 40px),
+    repeating-linear-gradient(0deg, transparent 0 7px, rgba(63, 111, 168, 0.035) 7px 8px),
+    repeating-linear-gradient(90deg, transparent 0 7px, rgba(63, 111, 168, 0.035) 7px 8px),
+    var(--ink);
+  overflow: hidden;
+}
+
+.stage canvas {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+
+.stage[data-view="3d"] #view2d,
+.stage[data-view="flat"] #view {
+  display: none;
+}
+
+/* ── view tabs ───────────────────────────────── */
+.stage-tabs {
+  position: absolute;
+  top: 14px;
+  left: 52px;
+  display: flex;
+  gap: 6px;
+  z-index: 2;
+}
+
+.tab {
+  font-family: var(--mono);
+  font-size: 10px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  cursor: pointer;
+  padding: 5px 11px;
+  border-radius: 0;
+  background: rgba(8, 17, 32, 0.85);
+  border: 1px solid var(--line);
+  color: var(--text-dim);
+  transition: all 0.15s;
+}
+
+.tab:hover {
+  border-color: var(--blueprint);
+  color: var(--text);
+}
+
+.tab.is-active {
+  border-color: var(--glow-deep);
+  color: var(--glow);
+  /* stays dark: the zoomed path can be solid amber right behind this */
+  background: rgba(8, 17, 32, 0.92);
+}
+
+.stage-corner {
+  position: absolute;
+  width: 26px;
+  height: 26px;
+  border: 1px solid var(--blueprint);
+  opacity: 0.7;
+  pointer-events: none;
+}
+
+.stage-corner.tl { top: 14px; left: 14px; border-width: 1px 0 0 1px; }
+.stage-corner.br { bottom: 14px; right: 14px; border-width: 0 1px 1px 0; }
+
+.stage-hint {
+  position: absolute;
+  top: 16px;
+  right: 20px;
+  margin: 0;
+  font-size: 10px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--text-dim);
+  pointer-events: none;
+  background: rgba(8, 17, 32, 0.85);
+  padding: 3px 7px;
+}
+
+.stage-readout {
+  position: absolute;
+  bottom: 16px;
+  left: 20px;
+  margin: 0;
+  font-size: 10.5px;
+  color: var(--blueprint);
+  pointer-events: none;
+  white-space: pre;
+  background: rgba(8, 17, 32, 0.85);
+  padding: 3px 7px;
+}
+
+/* ── load-in ─────────────────────────────────── */
+.reveal {
+  animation: rise 0.55s cubic-bezier(0.2, 0.7, 0.2, 1) both;
+  animation-delay: calc(var(--d, 0) * 90ms);
+}
+
+@keyframes rise {
+  from { opacity: 0; transform: translateY(14px); }
+  to { opacity: 1; transform: none; }
+}
+
+@media (max-width: 900px) {
+  .frame { grid-template-columns: 1fr; grid-template-rows: auto 60vh; }
+  .panel { border-right: 0; border-bottom: 1px solid var(--line); }
+}

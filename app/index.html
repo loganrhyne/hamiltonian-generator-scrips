@@ -1,0 +1,106 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Hamiltonian Lamp Designer</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Crect width='16' height='16' fill='%23081120'/%3E%3Cpath d='M3 13V3h4v6h2V3h4v10h-4V11H7v2z' fill='%23ffb45e'/%3E%3C/svg%3E">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Big+Shoulders+Display:wght@500;700&family=IBM+Plex+Mono:ital,wght@0,400;0,500;1,400&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="style.css">
+<script type="importmap">
+  { "imports": { "three": "./vendor/three.module.min.js" } }
+</script>
+<script src="./vendor/jspdf.umd.min.js" defer></script>
+</head>
+<body>
+<main class="frame">
+  <aside class="panel">
+    <header class="masthead reveal">
+      <h1>Hamiltonian<br>Lamp</h1>
+      <p class="masthead-sub">papercraft designer · one cycle, every cell</p>
+    </header>
+
+    <section class="block reveal" style="--d:1">
+      <h2><span class="block-no">01</span> Path</h2>
+      <div class="field-grid">
+        <label class="field">
+          <span>cols <em>around</em></span>
+          <input id="cols" type="number" value="8" min="4" max="200" step="2">
+        </label>
+        <label class="field">
+          <span>rows <em>tall</em></span>
+          <input id="rows" type="number" value="18" min="4" max="200" step="2">
+        </label>
+        <label class="field">
+          <span>seed</span>
+          <input id="seed" type="number" value="42" min="0" step="1">
+        </label>
+        <label class="field">
+          <span>sampler</span>
+          <select id="tree">
+            <option value="prim">prim · bushy</option>
+            <option value="backtracker">backtracker · winding</option>
+          </select>
+        </label>
+      </div>
+      <div class="btn-row">
+        <button id="regen" class="btn btn-ghost" type="button">↻ reroll seed</button>
+      </div>
+      <p id="path-note" class="note"></p>
+    </section>
+
+    <section class="block reveal" style="--d:2">
+      <h2><span class="block-no">02</span> Dimensions <em>mm</em></h2>
+      <div class="field-grid">
+        <label class="field">
+          <span>cell&nbsp;x</span>
+          <input id="cellW" type="number" value="60" min="2" max="200" step="1">
+        </label>
+        <label class="field">
+          <span>cell&nbsp;y</span>
+          <input id="cellH" type="number" value="60" min="2" max="200" step="1">
+        </label>
+        <label class="field">
+          <span>wall height</span>
+          <input id="wall" type="number" value="20" min="4" max="80" step="1">
+        </label>
+      </div>
+    </section>
+
+    <section class="block reveal" style="--d:3">
+      <h2><span class="block-no">03</span> Title block</h2>
+      <dl class="specs" id="specs"></dl>
+    </section>
+
+    <section class="block reveal" style="--d:4">
+      <h2><span class="block-no">04</span> Output <em>A4 · print at 100%</em></h2>
+      <div class="btn-col">
+        <button id="dl-strips" class="btn btn-solid" type="button">
+          <b>Wall pieces</b><span id="dl-strips-sub">— curved pieces to cut &amp; fold</span>
+        </button>
+        <button id="dl-tiles" class="btn btn-solid" type="button">
+          <b>Path template</b><span id="dl-tiles-sub">— tiles to tape together</span>
+        </button>
+      </div>
+      <p id="status" class="note"></p>
+    </section>
+  </aside>
+
+  <section class="stage reveal" style="--d:2" id="stage" data-view="3d">
+    <canvas id="view"></canvas>
+    <canvas id="view2d"></canvas>
+    <div class="stage-corner tl"></div>
+    <div class="stage-corner br"></div>
+    <div class="stage-tabs">
+      <button id="tab-3d" class="tab is-active" type="button">3d</button>
+      <button id="tab-flat" class="tab" type="button">unrolled</button>
+    </div>
+    <p class="stage-hint" id="stage-hint">drag to orbit · scroll to zoom</p>
+    <p class="stage-readout" id="readout"></p>
+  </section>
+</main>
+<script type="module" src="./js/main.js"></script>
+</body>
+</html>
