@@ -25,8 +25,11 @@ The stage has two tabs:
 - **unrolled** — the cylinder cut open and laid flat: a light cell grid with the
   Hamiltonian path drawn over it, in the same frame the tile PDF prints in
   (x = circumference, y = height, origin top-left). The dashed verticals are the
-  glue seam, so the two edges meet when rolled. The grid is dropped
-  automatically when cells fall below ~6 px on screen, where it reads as noise.
+  glue seam, so the two edges meet when rolled. Drag to pan, scroll (or pinch)
+  to zoom about the cursor, double-click to refit. The grid is dropped
+  automatically when cells fall below ~6 px on screen, where it reads as noise,
+  and comes back as you zoom in. Framing survives a seed reroll and refits when
+  the sheet's dimensions change.
 
 ## Controls
 

@@ -6,7 +6,7 @@ import { generateCycle, verifyCycle, cycleSegments, cycleSteps } from '../js/cyc
 import {
   buildSheet, buildPieces, buildTiles, buildWallMesh, computeStats, pieceOutline, A4,
 } from '../js/geometry.js';
-import { fitTransform } from '../js/unrolled.js';
+import { fitTransform, fitView, zoomAbout, clampView, ZOOM_MIN, ZOOM_MAX } from '../js/unrolled.js';
 
 let passed = 0;
 let failed = 0;
@@ -324,6 +324,58 @@ console.log('10. unrolled view fit');
   // degenerate viewports degrade to a no-draw rather than NaN
   const tiny = fitTransform(sheet, 10, 10, pad);
   check(tiny.k === 0, 'viewport smaller than padding yields k = 0');
+}
+
+// ─────────────────── 11. unrolled pan + zoom ───────────────────
+console.log('11. unrolled pan/zoom');
+{
+  const sheet = buildSheet(generateCycle(8, 18, { seed: 42 }), { cellW: 60, cellH: 60 });
+  const [vw, vh] = [900, 600];
+  const fit = fitView(sheet, vw, vh);
+  const toMM = (v, px) => (px - v.tx) / v.scale;
+
+  // zooming keeps the sheet point under the cursor pinned
+  for (const [px, py] of [[450, 300], [120, 80], [880, 590]]) {
+    const before = [toMM(fit, px), (py - fit.ty) / fit.scale];
+    const z = zoomAbout(fit, px, py, 2.5, fit.scale);
+    const after = [toMM(z, px), (py - z.ty) / z.scale];
+    check(approx(before[0], after[0], 1e-9), `zoom pins x under cursor at ${px}`);
+    check(approx(before[1], after[1], 1e-9), `zoom pins y under cursor at ${py}`);
+  }
+
+  // scale is bounded both ways
+  let z = fit;
+  for (let i = 0; i < 40; i++) z = zoomAbout(z, 450, 300, 2, fit.scale);
+  check(approx(z.scale, fit.scale * ZOOM_MAX, 1e-9), 'zoom in stops at ZOOM_MAX');
+  let o = fit;
+  for (let i = 0; i < 40; i++) o = zoomAbout(o, 450, 300, 0.5, fit.scale);
+  check(approx(o.scale, fit.scale * ZOOM_MIN, 1e-9), 'zoom out stops at ZOOM_MIN');
+
+  // zoom by 1 is identity
+  const same = zoomAbout(fit, 300, 200, 1, fit.scale);
+  check(approx(same.scale, fit.scale) && approx(same.tx, fit.tx) && approx(same.ty, fit.ty),
+    'zoom factor 1 leaves the view unchanged');
+
+  // panning cannot fling the sheet out of sight
+  const keep = 60;
+  for (const [dx, dy] of [[9999, 0], [-9999, 0], [0, 9999], [0, -9999], [5000, -5000]]) {
+    const c = clampView({ scale: fit.scale, tx: fit.tx + dx, ty: fit.ty + dy }, sheet, vw, vh, keep);
+    const sw = sheet.widthMM * c.scale;
+    const sh = sheet.heightMM * c.scale;
+    const visX = Math.min(c.tx + sw, vw) - Math.max(c.tx, 0);
+    const visY = Math.min(c.ty + sh, vh) - Math.max(c.ty, 0);
+    check(visX >= Math.min(keep, sw) - 1e-9, `pan ${dx},${dy} keeps sheet on screen in x`);
+    check(visY >= Math.min(keep, sh) - 1e-9, `pan ${dx},${dy} keeps sheet on screen in y`);
+  }
+
+  // the fitted view is already within bounds, so clamping is a no-op
+  const noop = clampView(fit, sheet, vw, vh, keep);
+  check(approx(noop.tx, fit.tx) && approx(noop.ty, fit.ty), 'clamp leaves the fitted view alone');
+
+  // fitView agrees with fitTransform
+  const ft = fitTransform(sheet, vw, vh);
+  check(approx(ft.k, fit.scale) && approx(ft.ox, fit.tx) && approx(ft.oy, fit.ty),
+    'fitView matches fitTransform');
 }
 
 // ─────────────────── summary ───────────────────

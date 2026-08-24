@@ -22,7 +22,7 @@ const viewer = new LampViewer($('view'));
 const flat = new UnrolledView($('view2d'));
 const state = { cycle: null, params: null, stats: null, pieces: null, tiles: null, sheet: null };
 
-const HINTS = { '3d': 'drag to orbit · scroll to zoom', flat: 'unrolled sheet · dashed edges are the glue seam' };
+const HINTS = { '3d': 'drag to orbit · scroll to zoom', flat: 'drag to pan · scroll to zoom · dbl-click to reset' };
 
 function setView(view) {
   els.stage.dataset.view = view;
