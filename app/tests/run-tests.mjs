@@ -6,6 +6,9 @@ import { generateCycle, verifyCycle, cycleSegments, cycleSteps } from '../js/cyc
 import {
   buildSheet, buildPieces, buildTiles, buildWallMesh, computeStats, pieceOutline, A4,
 } from '../js/geometry.js';
+import {
+  buildPanels, buildPanelTiles, colsStep, openSides, packStock, prismMapper,
+} from '../js/panels.js';
 import { fitTransform, fitView, zoomAbout, clampView, ZOOM_MIN, ZOOM_MAX } from '../js/unrolled.js';
 
 let passed = 0;
@@ -376,6 +379,152 @@ console.log('11. unrolled pan/zoom');
   const ft = fitTransform(sheet, vw, vh);
   check(approx(ft.k, fit.scale) && approx(ft.ox, fit.tx) && approx(ft.oy, fit.ty),
     'fitView matches fitTransform');
+}
+
+// ─────────────────── 12. flat-panel build ───────────────────
+console.log('12. flat panels');
+{
+  check(colsStep(3) === 6 && colsStep(4) === 4 && colsStep(5) === 10
+    && colsStep(6) === 6 && colsStep(8) === 8, 'column step keeps cols even and divisible');
+
+  {
+    const c = generateCycle(12, 10, { seed: 3 });
+    const sd = openSides(c);
+    const bits = (v) => [1, 2, 4, 8].filter((b) => v & b).length;
+    check([...sd].every((v) => bits(v) === 2), 'every cell has exactly two open sides');
+  }
+
+  // half-open, so a point on the edge shared by two adjacent rects is in one
+  const inRects = (list, x, y) => list.some((r) => x >= r.x && x < r.x + r.w && y >= r.y && y < r.y + r.h);
+  const configs = [
+    [8, 6, 4, 30, 30, 5, 5], [12, 10, 3, 40, 30, 4, 5], [16, 18, 4, 60, 60, 5, 5],
+    [24, 12, 6, 40, 40, 3, 4], [16, 16, 8, 50, 50, 8, 6], [10, 8, 5, 36, 36, 5, 5],
+  ];
+  let swept = 0;
+  for (const [cols, rows, panels, cw, ch, inset, strip] of configs) {
+    for (const tree of ['prim', 'backtracker']) {
+      for (const seed of [0, 7]) {
+        const tag = `${cols}x${rows}/${panels}p ${tree} s${seed}`;
+        const cyc = generateCycle(cols, rows, { seed, tree });
+        const b = buildPanels(cyc, { cellW: cw, cellH: ch, panels, inset, strip });
+        swept++;
+        check(b.panels.length === panels, `${tag}: panel count`);
+        check(approx(b.panelW * panels, cols * cw), `${tag}: panels span the circumference`);
+        check(b.gap === 2 * inset, `${tag}: side-by-side runs are 2·inset apart`);
+        let overlaps = 0;
+        let outside = 0;
+        let uncovered = 0;
+        let badMitre = 0;
+        for (const pn of b.panels) {
+          const ws = pn.walls;
+          for (let i = 0; i < ws.length; i++) {
+            const a = ws[i];
+            if (!(a.len > 0)) overlaps++;
+            for (let j = i + 1; j < ws.length; j++) {
+              const q = ws[j];
+              const dx = Math.min(a.x + a.w, q.x + q.w) - Math.max(a.x, q.x);
+              const dy = Math.min(a.y + a.h, q.y + q.h) - Math.max(a.y, q.y);
+              if (dx > 1e-6 && dy > 1e-6) overlaps++;
+            }
+            // strips sit on the path, never over a cut-away gap
+            for (const [fx, fy] of [[0.5, 0.5], [0.01, 0.01], [0.99, 0.01], [0.01, 0.99], [0.99, 0.99]]) {
+              if (!inRects(pn.keep, a.x + fx * a.w, a.y + fy * a.h)) outside++;
+            }
+            const m = a.ends.filter((e) => e === 'mitre').length;
+            const atEdge = (a.x < 1e-6 ? 1 : 0) + (a.x + a.w > pn.widthMM - 1e-6 ? 1 : 0);
+            if (m !== atEdge || (m && a.orient !== 'h')) badMitre++;
+          }
+          // every path point within one strip width of a wall face is wood
+          const h = 1;
+          const d = strip - h / 2;
+          for (let y = h / 2; y < pn.heightMM; y += h) {
+            for (let x = h / 2; x < pn.widthMM; x += h) {
+              if (!inRects(pn.keep, x, y)) continue;
+              let band = false;
+              for (const [ox, oy] of [[d, 0], [-d, 0], [0, d], [0, -d], [d, d], [d, -d], [-d, d], [-d, -d]]) {
+                const qx = x + ox;
+                const qy = y + oy;
+                if (qx < 0 || qx >= pn.widthMM) continue; // panel edge: a cut, not a wall
+                if (qy < 0 || qy > pn.heightMM || !inRects(pn.keep, qx, qy)) band = true;
+              }
+              if (band && !inRects(ws, x, y)) uncovered++;
+            }
+          }
+        }
+        check(overlaps === 0, `${tag}: strips never overlap (${overlaps})`);
+        check(outside === 0, `${tag}: strips stay on the path (${outside})`);
+        check(uncovered === 0, `${tag}: walls line every face, corners filled (${uncovered})`);
+        check(badMitre === 0, `${tag}: mitres exactly where strips meet a panel edge`);
+        check(b.cutList.reduce((s2, g) => s2 + g.count, 0) === b.strips, `${tag}: cut list counts every strip`);
+        const kept = b.panels.reduce((s2, pn) => s2 + pn.keep.reduce((t, r) => t + r.w * r.h, 0), 0);
+        const cut = b.panels.reduce((s2, pn) => s2 + pn.cut.reduce((t, r) => t + r.w * r.h, 0), 0);
+        check(approx(kept + cut, cols * cw * rows * ch, 1e-3), `${tag}: kept + cut tile each panel`);
+        // tiles carry every bit of wall
+        const t = buildPanelTiles(b);
+        const tileArea = t.pages.reduce((s2, pg) => s2 + pg.walls.reduce((u, r) => u + r.w * r.h, 0), 0);
+        const wallArea = b.panels.reduce((s2, pn) => s2 + pn.walls.reduce((u, r) => u + r.w * r.h, 0), 0);
+        check(approx(tileArea, wallArea, 1e-3), `${tag}: tiles cover all wall area`);
+      }
+    }
+  }
+  console.log(`  ${swept} panel builds verified`);
+
+  // the 4-panel version of the floor-lamp grid
+  {
+    const b = buildPanels(generateCycle(16, 18, { seed: 42 }),
+      { cellW: 60, cellH: 60, panels: 4, inset: 5, strip: 5 });
+    check(approx(b.acrossFlats, 240) && approx(b.panelH, 1080), '16x18 @ 60 mm, 4 panels -> 240 mm square, 1080 tall');
+    check(b.mitre === 45 && approx(b.clear, 40), 'square prism mitres at 45°, 40 mm clear channel');
+    check(b.panels.every((pn) => pn.walls.every((w2) => w2.len <= b.stock)), 'no strip longer than the stock');
+    // with short stock, long runs are split into butt-jointed lengths
+    const short = buildPanels(generateCycle(16, 18, { seed: 42 }),
+      { cellW: 60, cellH: 60, panels: 4, inset: 5, strip: 5, stock: 200 });
+    const all = short.panels.flatMap((pn) => pn.walls);
+    check(all.some((w2) => w2.joined) && all.every((w2) => w2.len + short.kerf <= 200 + 1e-9),
+      'runs longer than the stock are split to fit it');
+    check(approx(short.totalLength, b.totalLength, 1e-6), 'splitting keeps the total strip length');
+  }
+
+  // invalid builds are refused
+  const cyc = generateCycle(12, 8, { seed: 1 });
+  for (const [label, opts] of [
+    ['cols not divisible', { cellW: 40, cellH: 40, panels: 5, inset: 5, strip: 5 }],
+    ['no channel left', { cellW: 20, cellH: 20, panels: 4, inset: 5, strip: 5 }],
+    ['zero inset', { cellW: 40, cellH: 40, panels: 4, inset: 0, strip: 5 }],
+  ]) {
+    let threw = false;
+    try { buildPanels(cyc, opts); } catch { threw = true; }
+    check(threw, `rejects ${label}`);
+  }
+
+  // stock packing
+  check(packStock([600, 600, 400, 400], 1000, 0).length === 2, 'stock packing pairs 600+400');
+  check(packStock([500, 500], 1000, 1).length === 2, 'kerf counts against the stock');
+
+  // prism: neighbouring panels share their corner edge, and it closes
+  {
+    const b = buildPanels(generateCycle(12, 6, { seed: 2 }), { cellW: 40, cellH: 40, panels: 6, inset: 4, strip: 4 });
+    const map = prismMapper(b);
+    let worst = 0;
+    for (let p2 = 0; p2 < 6; p2++) {
+      const a = map(p2, b.panelW, 10);
+      const q = map((p2 + 1) % 6, 0, 10);
+      worst = Math.max(worst, Math.hypot(a[0] - q[0], a[1] - q[1], a[2] - q[2]));
+    }
+    check(worst < 1e-6, 'prism panels meet at shared corners, P6 closes onto P1');
+    const c0 = map(0, 0, 0);
+    check(approx(Math.hypot(c0[0], c0[2]), b.acrossCorners / 2, 1e-6), 'corner sits at the circumradius');
+  }
+
+  // performance
+  {
+    const t0 = performance.now();
+    const b = buildPanels(generateCycle(100, 100, { seed: 5 }), { cellW: 20, cellH: 20, panels: 4, inset: 3, strip: 3 });
+    buildPanelTiles(b);
+    const ms = performance.now() - t0;
+    console.log(`  100x100 panel build + tiles: ${ms.toFixed(0)} ms, ${b.strips} strips`);
+    check(ms < 1500, '100x100 panel build under 1.5 s');
+  }
 }
 
 // ─────────────────── summary ───────────────────

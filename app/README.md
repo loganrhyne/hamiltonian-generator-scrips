@@ -41,6 +41,33 @@ The stage has two tabs:
   cylinder diameter is cols·cellX/π; height = rows·cellY.
 - **wall height** — how far the wall ribbon stands off the shade, in mm.
 
+## Build methods
+
+- **papercraft cylinder** — the original: a rolled paper shade with the wall
+  ribbon folded from printed pieces (outputs below).
+- **wood on acetate · flat panels** — the unrolled cycle split into N flat
+  panels of a prism (3 triangle, 4 square, 5, 6 hexagon, 8 octagon). Print the
+  template, lay acetate over it, glue square-section wood strips (e.g. 5 mm
+  walnut) on the brown bars, then cut the grey areas out of the acetate. The
+  path is the corridor that stays: its wall faces sit **inset** mm in from the
+  grid lines wherever the path doesn't cross, so two runs side by side leave a
+  2·inset gap straddling the grid line. Light passes straight through the gaps;
+  the path between the walls diffuses it.
+  - **panels / inset / strip / stock length** set the prism, the gap, the strip
+    section and the stick length (runs longer than a stick are split into
+    butt-jointed lengths). `cols` snaps to a multiple of the panel count.
+  - Corners: at an outside corner the horizontal strip runs through and the
+    vertical one stops one strip width short; at an inside corner the
+    horizontal strip runs on one strip width. Horizontal strips that meet a
+    panel edge are mitred at 180°/N (45° for a square) with the long point on
+    the acetate, so they meet the next panel's strip with walls facing the bulb.
+  - **Panel templates** PDF: a cover with the spec, build steps and a lettered
+    cut list (count × length, end treatment, stick estimate), then each panel
+    tiled on A4 with crop marks; each bar carries its cut-list letter.
+  - After cutting, the path is several separate acetate pieces per panel, each
+    held where it runs off a panel edge (the count is in the title block), so
+    the panels need joining or a frame.
+
 ## Outputs (print at 100% scale, never "fit to page")
 
 1. **Wall pieces** (landscape A4) — the wall ribbon unfolded flat and cut into
@@ -69,7 +96,9 @@ The stage has two tabs:
   warm bulb light)
 - `js/unrolled.js` — 2D canvas view of the flat sheet; `fitTransform` is pure
   and Node-testable
-- `js/pdf.js` — renders the geometry layouts into the two jsPDF documents
+- `js/panels.js` — flat-panel build: inset wall layout, cut-away areas, cut
+  list, A4 tiling and prism mapping (pure, Node-testable)
+- `js/pdf.js` — renders the geometry layouts into the jsPDF documents
 - `js/main.js` — UI wiring
 
 ## Tests

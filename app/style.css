@@ -333,3 +333,8 @@ html, body {
   .frame { grid-template-columns: 1fr; grid-template-rows: auto 60vh; }
   .panel { border-right: 0; border-bottom: 1px solid var(--line); }
 }
+
+/* build method: the class display rules would otherwise beat [hidden] */
+[hidden] { display: none !important; }
+.field-wide { grid-column: 1 / -1; }
+.field-grid + .field-grid { margin-top: 10px; }

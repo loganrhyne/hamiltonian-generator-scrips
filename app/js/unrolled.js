@@ -17,6 +17,9 @@ const EDGE = 'rgba(127, 179, 224, 0.55)';
 const SEAM = '#7fb3e0';
 const LABEL = 'rgba(109, 132, 160, 0.9)';
 
+const KEEP = 'rgba(255, 214, 160, 0.30)';
+const WOOD = '#9a6a45';
+
 const MIN_GRID_PX = 6; // below this pitch the grid is noise, so skip it
 
 /**
@@ -84,6 +87,7 @@ export class UnrolledView {
     this.ctx = canvas.getContext('2d');
     this.sheet = null;
     this.stats = null;
+    this.build = null;     // panels.buildPanels output in flat-panel mode
     this.view = null;      // {scale, tx, ty}; null until first fit
     this.fitScale = 0;     // scale of the fitted view, for zoom bounds
     this._drag = null;
@@ -100,8 +104,11 @@ export class UnrolledView {
     this._bindInteraction();
   }
 
-  /** Redraw from a sheet (geometry.buildSheet) + stats. Returns draw ms. */
-  update(sheet, stats) {
+  /**
+   * Redraw from a sheet (geometry.buildSheet) + stats, plus the panel build
+   * when in flat-panel mode. Returns draw ms.
+   */
+  update(sheet, stats, build = null) {
     const t0 = performance.now();
     const prev = this.sheet;
     const sameSheet = prev
@@ -109,6 +116,7 @@ export class UnrolledView {
       && prev.heightMM === sheet.heightMM;
     this.sheet = sheet;
     this.stats = stats;
+    this.build = build;
     // hold the user's framing across a seed reroll; refit when the sheet resizes
     if (!sameSheet) this.view = null;
     this.draw();
@@ -230,6 +238,65 @@ export class UnrolledView {
     ctx.strokeStyle = EDGE;
     ctx.strokeRect(ox, oy, right - ox, bottom - oy);
 
+    if (this.build) {
+      this._drawPanels(X, Y, k, oy, bottom);
+    } else {
+      this._drawPath(X, Y, k, ox, oy, right, bottom);
+    }
+
+    // caption above the sheet — below it would collide with the stage readout
+    ctx.save();
+    ctx.fillStyle = LABEL;
+    ctx.font = '10px "IBM Plex Mono", ui-monospace, monospace';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    const zoomPct = this.fitScale > 0 ? Math.round((k / this.fitScale) * 100) : 100;
+    const what = this.build
+      ? `${this.build.panelCount} panels · ${sheet.widthMM.toFixed(0)} × ${sheet.heightMM.toFixed(0)} mm`
+        + ' · dark = cut away · dashed = corner'
+      : `unrolled sheet · ${cols}×${rows} cells · `
+        + `${sheet.widthMM.toFixed(0)} × ${sheet.heightMM.toFixed(0)} mm · dashed = glue seam`;
+    const caption = what + (zoomPct === 100 ? '' : ` · ${zoomPct}%`);
+    // chip behind the text: at high zoom the path underneath is solid amber
+    const tw = ctx.measureText(caption).width;
+    ctx.fillStyle = 'rgba(8, 17, 32, 0.85)';
+    ctx.fillRect(w / 2 - tw / 2 - 7, 16 - 9, tw + 14, 18);
+    ctx.fillStyle = LABEL;
+    ctx.fillText(caption, w / 2, 16); // pinned to the viewport, not the sheet
+    ctx.restore();
+  }
+
+  // flat-panel mode: acetate kept along the path, wood strips, prism corners
+  _drawPanels(X, Y, k, oy, bottom) {
+    const { ctx, build } = this;
+    const rects = (list, dx) => {
+      ctx.beginPath();
+      for (const rc of list) ctx.rect(X(dx + rc.x), Y(rc.y), rc.w * k, rc.h * k);
+      ctx.fill();
+    };
+    build.panels.forEach((pn, i) => {
+      const dx = i * build.panelW;
+      ctx.fillStyle = KEEP;
+      rects(pn.keep, dx);
+      ctx.fillStyle = WOOD;
+      rects(pn.walls, dx);
+    });
+    ctx.save();
+    ctx.setLineDash([6, 4]);
+    ctx.strokeStyle = SEAM;
+    ctx.lineWidth = 1.2;
+    ctx.beginPath();
+    for (let i = 0; i <= build.panelCount; i++) {
+      const x = X(i * build.panelW);
+      ctx.moveTo(x, oy);
+      ctx.lineTo(x, bottom);
+    }
+    ctx.stroke();
+    ctx.restore();
+  }
+
+  _drawPath(X, Y, k, ox, oy, right, bottom) {
+    const { ctx, sheet } = this;
     // seam edges: these two verticals are glued to each other when rolled
     ctx.save();
     ctx.setLineDash([6, 4]);
@@ -260,24 +327,6 @@ export class UnrolledView {
       ctx.lineTo(X(s.x2), Y(s.y2));
     }
     ctx.stroke();
-    ctx.restore();
-
-    // caption above the sheet — below it would collide with the stage readout
-    ctx.save();
-    ctx.fillStyle = LABEL;
-    ctx.font = '10px "IBM Plex Mono", ui-monospace, monospace';
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'middle';
-    const zoomPct = this.fitScale > 0 ? Math.round((k / this.fitScale) * 100) : 100;
-    const caption = `unrolled sheet · ${cols}×${rows} cells · `
-      + `${sheet.widthMM.toFixed(0)} × ${sheet.heightMM.toFixed(0)} mm · dashed = glue seam`
-      + (zoomPct === 100 ? '' : ` · ${zoomPct}%`);
-    // chip behind the text: at high zoom the path underneath is solid amber
-    const tw = ctx.measureText(caption).width;
-    ctx.fillStyle = 'rgba(8, 17, 32, 0.85)';
-    ctx.fillRect(w / 2 - tw / 2 - 7, 16 - 9, tw + 14, 18);
-    ctx.fillStyle = LABEL;
-    ctx.fillText(caption, w / 2, 16); // pinned to the viewport, not the sheet
     ctx.restore();
   }
 }
