@@ -338,3 +338,7 @@ html, body {
 [hidden] { display: none !important; }
 .field-wide { grid-column: 1 / -1; }
 .field-grid + .field-grid { margin-top: 10px; }
+
+/* Keep the inspection legend clear of the three view buttons. */
+.stage-hint { top: 52px; left: 52px; right: 20px; }
+.tab[hidden] { display: none; }

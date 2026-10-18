@@ -2,6 +2,7 @@
 // Dependency-free test suite for the lamp designer's core modules.
 // Run: node app/tests/run-tests.mjs
 
+import { paperPathEdges } from '../js/paper-path.js';
 import { generateCycle, verifyCycle, cycleSegments, cycleSteps } from '../js/cycle.js';
 import {
   buildSheet, buildPieces, buildTiles, buildWallMesh, computeStats, pieceOutline, A4,
@@ -524,6 +525,36 @@ console.log('12. flat panels');
     const ms = performance.now() - t0;
     console.log(`  100x100 panel build + tiles: ${ms.toFixed(0)} ms, ${b.strips} strips`);
     check(ms < 1500, '100x100 panel build under 1.5 s');
+  }
+}
+
+// Retained-paper boundaries must not show tessellation lines as cut edges.
+{
+  const pn = { widthMM: 10, keep: [
+    { x: 0, y: 0, w: 10, h: 5 },
+    { x: 0, y: 5, w: 4, h: 5 },
+  ] };
+  const e = paperPathEdges(pn);
+  const length = lines => lines.reduce((n, [a, b]) => n + Math.hypot(b[0] - a[0], b[1] - a[1]), 0);
+  check(approx(length(e.cuts) + length(e.joins), 40), 'paper L shape has union perimeter, no internal rectangle edges');
+  check(approx(length(e.joins), 15), 'only retained portions on panel boundaries are joins');
+  for (const P of [3, 4, 5, 6, 8]) {
+    const b = buildPanels(generateCycle(colsStep(P) * 2, 8, { seed: 42 }),
+      { cellW: 60, cellH: 60, panels: P, inset: 5, strip: 5 });
+    const map = prismMapper(b);
+    let worst = 0, crossings = 0;
+    for (let i = 0; i < P; i++) {
+      const right = paperPathEdges(b.panels[i]).joins.filter(seg => approx(seg[0][0], b.panelW));
+      const left = paperPathEdges(b.panels[(i + 1) % P]).joins.filter(seg => approx(seg[0][0], 0));
+      check(JSON.stringify(right.map(seg => seg.map(pt => pt[1]))) === JSON.stringify(left.map(seg => seg.map(pt => pt[1]))),
+        `paper joins match adjacent panel including closing seam P${P}/${i}`);
+      for (const segment of right) for (const [u, v] of segment) {
+        const a = map(i, u, v), c = map((i + 1) % P, 0, v);
+        worst = Math.max(worst, Math.hypot(...a.map((n, j) => n - c[j])));
+        crossings++;
+      }
+    }
+    check(crossings > 0 && worst < 1e-6, `paper joins meet in 3D for ${P} panels`);
   }
 }
 

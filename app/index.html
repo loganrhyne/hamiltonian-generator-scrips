@@ -137,8 +137,9 @@
     <div class="stage-corner tl"></div>
     <div class="stage-corner br"></div>
     <div class="stage-tabs">
-      <button id="tab-3d" class="tab is-active" type="button">3d</button>
-      <button id="tab-flat" class="tab" type="button">unrolled</button>
+      <button id="tab-3d" aria-pressed="true" class="tab is-active" type="button">3d</button>
+      <button id="tab-paper" aria-pressed="false" class="tab" type="button" hidden>3d path</button>
+      <button id="tab-flat" aria-pressed="false" class="tab" type="button">unrolled</button>
     </div>
     <p class="stage-hint" id="stage-hint">drag to orbit · scroll to zoom</p>
     <p class="stage-readout" id="readout"></p>

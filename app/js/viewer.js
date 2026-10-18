@@ -5,6 +5,7 @@ import * as THREE from 'three';
 import { OrbitControls } from '../vendor/OrbitControls.js';
 import { buildWallMesh } from './geometry.js';
 import { prismMapper } from './panels.js';
+import { paperPathEdges } from './paper-path.js';
 
 export class LampViewer {
   constructor(canvas) {
@@ -27,6 +28,10 @@ export class LampViewer {
     const fill = new THREE.DirectionalLight(0x88aacc, 0.5);
     fill.position.set(1, 1, 1);
     this.scene.add(fill);
+    this.paperFill = new THREE.DirectionalLight(0xffffff, 2.4);
+    this.paperFill.position.set(1, 0.5, 2);
+    this.paperFill.visible = false;
+    this.scene.add(this.paperFill);
 
     this.group = new THREE.Group();
     this.scene.add(this.group);
@@ -48,6 +53,13 @@ export class LampViewer {
         side: THREE.DoubleSide,
         depthWrite: false,
       }),
+      paper: new THREE.MeshStandardMaterial({
+        color: 0xf3ead8, roughness: 1, side: THREE.DoubleSide,
+        emissive: 0x665f53, emissiveIntensity: 0.35,
+        polygonOffset: true, polygonOffsetFactor: 1, polygonOffsetUnits: 1,
+      }),
+      cut: new THREE.LineBasicMaterial({ color: 0x7fb3e0 }),
+      join: new THREE.LineBasicMaterial({ color: 0xffb45e }),
       walnut: new THREE.MeshStandardMaterial({
         color: 0x7a5236, roughness: 0.8, metalness: 0, side: THREE.DoubleSide,
       }),
@@ -85,7 +97,7 @@ export class LampViewer {
     this.bulb.intensity = radius * radius * 0.9;
     const size = Math.max(H, radius * 2);
     this.controls.target.set(0, H / 2, 0);
-    this.camera.position.set(size * 1.1, H * 0.72, size * 1.25);
+    this.camera.position.set(size * 0.65, H * 0.72, size * 1.5);
     this.camera.near = size / 100;
     this.camera.far = size * 50;
     this.camera.updateProjectionMatrix();
@@ -97,18 +109,27 @@ export class LampViewer {
    * translucent acetate, the cut-away gaps open, wood strips standing inward.
    * Returns build ms.
    */
-  updatePanels(build) {
+  updatePanels(build, { paperPath = false, preserveCamera = false } = {}) {
     const t0 = performance.now();
     this._clear();
+    this.paperFill.visible = paperPath;
     const map = prismMapper(build);
     const skin = [];
     const wood = [];
+    const cuts = [], joins = [];
     const quad = (out, a, b, c, d) => out.push(...a, ...b, ...c, ...a, ...c, ...d);
     build.panels.forEach((pn, i) => {
       for (const rc of pn.keep) {
         quad(skin,
           map(i, rc.x, rc.y), map(i, rc.x + rc.w, rc.y),
           map(i, rc.x + rc.w, rc.y + rc.h), map(i, rc.x, rc.y + rc.h));
+      }
+      if (paperPath) {
+        const edges = paperPathEdges(pn);
+        for (const [name, out] of [['cuts', cuts], ['joins', joins]]) {
+          for (const segment of edges[name]) for (const [u, v] of segment) out.push(...map(i, u, v));
+        }
+        return;
       }
       const d = build.strip;
       for (const rc of pn.walls) {
@@ -128,8 +149,17 @@ export class LampViewer {
       geo.computeVertexNormals();
       return new THREE.Mesh(geo, mat);
     };
-    this.group.add(mesh(skin, this._materials.shade));
-    this.group.add(mesh(wood, this._materials.walnut));
+    this.group.add(mesh(skin, paperPath ? this._materials.paper : this._materials.shade));
+    if (!paperPath) this.group.add(mesh(wood, this._materials.walnut));
+    if (paperPath) {
+      for (const [arr, material] of [[cuts, this._materials.cut], [joins, this._materials.join]]) {
+        const geo = new THREE.BufferGeometry();
+        geo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(arr), 3));
+        this.group.add(new THREE.LineSegments(geo, material));
+      }
+      if (!preserveCamera) this._frame(build.panelH, build.acrossCorners / 2);
+      return performance.now() - t0;
+    }
 
     // panel outlines: top and bottom rims plus the prism corners
     const H = build.panelH;
@@ -143,12 +173,13 @@ export class LampViewer {
     for (let k = 0; k < P; k++) posts.push(corner(k, 0), corner(k, H));
     this.group.add(new THREE.LineSegments(new THREE.BufferGeometry().setFromPoints(posts), this._materials.rim));
 
-    this._frame(H, build.acrossCorners / 2);
+    if (!preserveCamera) this._frame(H, build.acrossCorners / 2);
     return performance.now() - t0;
   }
 
   /** Rebuild the model from a cycle + physical params. Returns build ms. */
   update(cycle, { cellW, cellH, wallHeight }) {
+    this.paperFill.visible = false;
     const t0 = performance.now();
     this._clear();
 
