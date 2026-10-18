@@ -18,10 +18,16 @@ cd app && python3 -m http.server 8000
 
 ## Views
 
-The stage has two tabs:
+The stage has three view tabs in flat-panel mode:
 
 - **3d** — the assembled lamp: translucent shade, inward wall ribbon, warm bulb.
   Drag to orbit, scroll to zoom.
+- **3d path** — the retained paper/acetate from the panel template, assembled
+  around the same prism without wood obscuring it. Blue lines are cut edges;
+  amber lines mark where retained path meets the adjacent panel, including the
+  closing seam. Open gaps stay open. These are sheet surfaces, not simulated
+  paper thickness or added glue tabs; the lines show where joining is needed,
+  not a designed fastening. Switching between 3d and 3d path keeps the camera.
 - **unrolled** — the cylinder cut open and laid flat: a light cell grid with the
   Hamiltonian path drawn over it, in the same frame the tile PDF prints in
   (x = circumference, y = height, origin top-left). The dashed verticals are the

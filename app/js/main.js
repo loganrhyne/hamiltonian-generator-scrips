@@ -16,7 +16,7 @@ const els = {
   dlStrips: $('dl-strips'), dlTiles: $('dl-tiles'),
   dlStripsSub: $('dl-strips-sub'), dlTilesSub: $('dl-tiles-sub'),
   stage: $('stage'), stageHint: $('stage-hint'),
-  tab3d: $('tab-3d'), tabFlat: $('tab-flat'),
+  tab3d: $('tab-3d'), tabPaper: $('tab-paper'), tabFlat: $('tab-flat'),
   build: $('build'), panels: $('panels'), inset: $('inset'), strip: $('strip'), stock: $('stock'),
   wallField: $('wall-field'), panelFields: $('panel-fields'), buildNote: $('build-note'),
   paperOut: $('paper-out'), panelOut: $('panel-out'),
@@ -30,17 +30,27 @@ const state = {
   panelBuild: null, panelTiles: null, panelError: null,
 };
 
-const HINTS = { '3d': 'drag to orbit · scroll to zoom', flat: 'drag to pan · scroll to zoom · dbl-click to reset' };
+let currentView = '3d';
+const HINTS = { paper: 'blue: cut edges · amber: panel joins · drag to orbit', '3d': 'drag to orbit · scroll to zoom', flat: 'drag to pan · scroll to zoom · dbl-click to reset' };
 
 function setView(view) {
-  els.stage.dataset.view = view;
+  currentView = view;
+  els.stage.dataset.view = view === 'paper' ? '3d' : view;
+  els.tabPaper.classList.toggle('is-active', view === 'paper');
+  for (const [tab, active] of [[els.tab3d, view === '3d'], [els.tabPaper, view === 'paper'], [els.tabFlat, view === 'flat']]) {
+    tab.setAttribute('aria-pressed', String(active));
+  }
+  if (state.panelBuild && view !== 'flat') {
+    viewer.updatePanels(state.panelBuild, { paperPath: view === 'paper', preserveCamera: true });
+  }
   els.tab3d.classList.toggle('is-active', view === '3d');
   els.tabFlat.classList.toggle('is-active', view === 'flat');
   els.stageHint.textContent = HINTS[view];
-  if (view === '3d') viewer.resize(); else flat.draw();
+  if (view !== 'flat') viewer.resize(); else flat.draw();
 }
 
 els.tab3d.addEventListener('click', () => setView('3d'));
+els.tabPaper.addEventListener('click', () => setView('paper'));
 els.tabFlat.addEventListener('click', () => setView('flat'));
 
 function readParams() {
@@ -184,8 +194,11 @@ function rebuild() {
     }
   }
 
+  els.tabPaper.hidden = !panelMode;
+  els.tabPaper.disabled = !state.panelBuild;
+  if (currentView === 'paper' && !state.panelBuild) setView('3d');
   const tMesh = panelMode && state.panelBuild
-    ? viewer.updatePanels(state.panelBuild)
+    ? viewer.updatePanels(state.panelBuild, { paperPath: currentView === 'paper' })
     : viewer.update(state.cycle, p);
   flat.update(state.sheet, state.stats, panelMode ? state.panelBuild : null);
   renderSpecs();
