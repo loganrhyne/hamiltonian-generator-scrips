@@ -19,6 +19,34 @@ The interactive web app that used to live in `app/` moved to its own
 repository, `hamiltonian-lamp-builder`, on 2026-11-19, with its history. It
 now also covers flat rectangular circuits and woven-strip charts.
 
+## Woven-strip wall pieces — `weave_chart.py`
+
+Charts for weaving a flat Hamiltonian circuit out of two-colour paper strips.
+Each pattern cell is 3 strips wide in both directions (`--k`, any odd number
+>= 3). The path is drawn as a dark line through each cell's centre, out to the
+two edges it crosses, so the two closed edges stay light.
+
+```
+python weave_chart.py --size 8 6 --seed 7 --scheme checker --square 10 --out piece
+```
+
+- `--scheme solid`: plain single-colour strips laid light, dark, light across
+  each cell. Only the four edge-midpoint crossings of a cell depend on
+  over/under.
+- `--scheme checker`: strips cut one square wide along a row of a two-colour
+  checkerboard, weft laid one square out of phase with the warp, so every
+  crossing is a free pixel and one-colour areas come out as plain weave. Also
+  works with a three-tone check: band strips give one two-tone pair, gap strips
+  another.
+- `--square` is the strip width in mm; `--margin` is the fold-back allowance
+  at each strip end.
+- Outputs `<out>_chart.svg` (crossing chart: fill = visible colour, tick =
+  strip on top, red = cell edges), `<out>_proof.svg` (finished look at real
+  size) and `<out>_rows.txt` (strip counts and lengths, then one weft pass per
+  line as run lengths, e.g. `O2 U1 O3`, O = weft over).
+- With 3 strips per cell, no strip floats over or under more than 3 others in
+  either scheme. Tests: `python tests/test_weave_chart.py`.
+
 ## Generators
 
 There are two generators in this repo:
