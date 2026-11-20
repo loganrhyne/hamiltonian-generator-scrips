@@ -15,11 +15,9 @@ On the software side we need:
 
 ## Lamp designer app
 
-`app/` contains an interactive, fully client-side web app that wraps the whole
-pipeline: pick grid size (cells around × tall), cell mm dimensions, and wall
-height; get a live 3D preview of the assembled lamp plus two print-ready A4
-PDFs (wall strips to cut & fold, and a tiled path template to tape together).
-See [app/README.md](app/README.md). Run with `cd app && python3 -m http.server`.
+The interactive web app that used to live in `app/` moved to its own
+repository, `hamiltonian-lamp-builder`, on 2026-11-19, with its history. It
+now also covers flat rectangular circuits and woven-strip charts.
 
 ## Generators
 
